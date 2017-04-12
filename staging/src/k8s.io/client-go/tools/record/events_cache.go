@@ -25,11 +25,11 @@ import (
 
 	"github.com/golang/groupcache/lru"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/util/clock"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/util/clock"
+	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/util/strategicpatch"
 )
 
 const (
@@ -42,7 +42,7 @@ const (
 )
 
 // getEventKey builds unique event key based on source, involvedObject, reason, message
-func getEventKey(event *v1.Event) string {
+func getEventKey(event *api.Event) string {
 	return strings.Join([]string{
 		event.Source.Component,
 		event.Source.Host,
@@ -59,10 +59,10 @@ func getEventKey(event *v1.Event) string {
 }
 
 // EventFilterFunc is a function that returns true if the event should be skipped
-type EventFilterFunc func(event *v1.Event) bool
+type EventFilterFunc func(event *api.Event) bool
 
 // DefaultEventFilterFunc returns false for all incoming events
-func DefaultEventFilterFunc(event *v1.Event) bool {
+func DefaultEventFilterFunc(event *api.Event) bool {
 	return false
 }
 
@@ -70,10 +70,10 @@ func DefaultEventFilterFunc(event *v1.Event) bool {
 // It returns a tuple of the following:
 // aggregateKey - key the identifies the aggregate group to bucket this event
 // localKey - key that makes this event in the local group
-type EventAggregatorKeyFunc func(event *v1.Event) (aggregateKey string, localKey string)
+type EventAggregatorKeyFunc func(event *api.Event) (aggregateKey string, localKey string)
 
 // EventAggregatorByReasonFunc aggregates events by exact match on event.Source, event.InvolvedObject, event.Type and event.Reason
-func EventAggregatorByReasonFunc(event *v1.Event) (string, string) {
+func EventAggregatorByReasonFunc(event *api.Event) (string, string) {
 	return strings.Join([]string{
 		event.Source.Component,
 		event.Source.Host,
@@ -89,10 +89,10 @@ func EventAggregatorByReasonFunc(event *v1.Event) (string, string) {
 }
 
 // EventAggregatorMessageFunc is responsible for producing an aggregation message
-type EventAggregatorMessageFunc func(event *v1.Event) string
+type EventAggregatorMessageFunc func(event *api.Event) string
 
 // EventAggregratorByReasonMessageFunc returns an aggregate message by prefixing the incoming message
-func EventAggregatorByReasonMessageFunc(event *v1.Event) string {
+func EventAggregatorByReasonMessageFunc(event *api.Event) string {
 	return "(events with common reason combined)"
 }
 
@@ -110,10 +110,10 @@ type EventAggregator struct {
 	messageFunc EventAggregatorMessageFunc
 
 	// The maximum number of events in the specified interval before aggregation occurs
-	maxEvents int
+	maxEvents uint
 
 	// The amount of time in seconds that must transpire since the last occurrence of a similar event before it's considered new
-	maxIntervalInSeconds int
+	maxIntervalInSeconds uint
 
 	// clock is used to allow for testing over a time interval
 	clock clock.Clock
@@ -126,8 +126,8 @@ func NewEventAggregator(lruCacheSize int, keyFunc EventAggregatorKeyFunc, messag
 		cache:                lru.New(lruCacheSize),
 		keyFunc:              keyFunc,
 		messageFunc:          messageFunc,
-		maxEvents:            maxEvents,
-		maxIntervalInSeconds: maxIntervalInSeconds,
+		maxEvents:            uint(maxEvents),
+		maxIntervalInSeconds: uint(maxIntervalInSeconds),
 		clock:                clock,
 	}
 }
@@ -138,13 +138,13 @@ type aggregateRecord struct {
 	// if the size of this set exceeds the max, we know we need to aggregate
 	localKeys sets.String
 	// The last time at which the aggregate was recorded
-	lastTimestamp metav1.Time
+	lastTimestamp unversioned.Time
 }
 
 // EventAggregate identifies similar events and groups into a common event if required
-func (e *EventAggregator) EventAggregate(newEvent *v1.Event) (*v1.Event, error) {
+func (e *EventAggregator) EventAggregate(newEvent *api.Event) (*api.Event, error) {
 	aggregateKey, localKey := e.keyFunc(newEvent)
-	now := metav1.NewTime(e.clock.Now())
+	now := unversioned.NewTime(e.clock.Now())
 	record := aggregateRecord{localKeys: sets.NewString(), lastTimestamp: now}
 	e.Lock()
 	defer e.Unlock()
@@ -163,7 +163,7 @@ func (e *EventAggregator) EventAggregate(newEvent *v1.Event) (*v1.Event, error) 
 	record.lastTimestamp = now
 	e.cache.Add(aggregateKey, record)
 
-	if record.localKeys.Len() < e.maxEvents {
+	if uint(record.localKeys.Len()) < e.maxEvents {
 		return newEvent, nil
 	}
 
@@ -171,8 +171,8 @@ func (e *EventAggregator) EventAggregate(newEvent *v1.Event) (*v1.Event, error) 
 	record.localKeys.PopAny()
 
 	// create a new aggregate event
-	eventCopy := &v1.Event{
-		ObjectMeta: metav1.ObjectMeta{
+	eventCopy := &api.Event{
+		ObjectMeta: api.ObjectMeta{
 			Name:      fmt.Sprintf("%v.%x", newEvent.InvolvedObject.Name, now.UnixNano()),
 			Namespace: newEvent.Namespace,
 		},
@@ -191,10 +191,10 @@ func (e *EventAggregator) EventAggregate(newEvent *v1.Event) (*v1.Event, error) 
 // eventLog records data about when an event was observed
 type eventLog struct {
 	// The number of times the event has occurred since first occurrence.
-	count int
+	count uint
 
 	// The time at which the event was first recorded.
-	firstTimestamp metav1.Time
+	firstTimestamp unversioned.Time
 
 	// The unique name of the first occurrence of this event
 	name string
@@ -216,7 +216,7 @@ func newEventLogger(lruCacheEntries int, clock clock.Clock) *eventLogger {
 }
 
 // eventObserve records the event, and determines if its frequency should update
-func (e *eventLogger) eventObserve(newEvent *v1.Event) (*v1.Event, []byte, error) {
+func (e *eventLogger) eventObserve(newEvent *api.Event) (*api.Event, []byte, error) {
 	var (
 		patch []byte
 		err   error
@@ -240,18 +240,18 @@ func (e *eventLogger) eventObserve(newEvent *v1.Event) (*v1.Event, []byte, error
 
 		eventCopy2 := *event
 		eventCopy2.Count = 0
-		eventCopy2.LastTimestamp = metav1.NewTime(time.Unix(0, 0))
+		eventCopy2.LastTimestamp = unversioned.NewTime(time.Unix(0, 0))
 
 		newData, _ := json.Marshal(event)
 		oldData, _ := json.Marshal(eventCopy2)
-		patch, err = strategicpatch.CreateTwoWayMergePatch(oldData, newData, event)
+		patch, err = strategicpatch.CreateStrategicMergePatch(oldData, newData, event)
 	}
 
 	// record our new observation
 	e.cache.Add(
 		key,
 		eventLog{
-			count:           int(event.Count),
+			count:           uint(event.Count),
 			firstTimestamp:  event.FirstTimestamp,
 			name:            event.Name,
 			resourceVersion: event.ResourceVersion,
@@ -261,7 +261,7 @@ func (e *eventLogger) eventObserve(newEvent *v1.Event) (*v1.Event, []byte, error
 }
 
 // updateState updates its internal tracking information based on latest server state
-func (e *eventLogger) updateState(event *v1.Event) {
+func (e *eventLogger) updateState(event *api.Event) {
 	key := getEventKey(event)
 	e.Lock()
 	defer e.Unlock()
@@ -269,7 +269,7 @@ func (e *eventLogger) updateState(event *v1.Event) {
 	e.cache.Add(
 		key,
 		eventLog{
-			count:           int(event.Count),
+			count:           uint(event.Count),
 			firstTimestamp:  event.FirstTimestamp,
 			name:            event.Name,
 			resourceVersion: event.ResourceVersion,
@@ -305,7 +305,7 @@ type EventCorrelator struct {
 // EventCorrelateResult is the result of a Correlate
 type EventCorrelateResult struct {
 	// the event after correlation
-	Event *v1.Event
+	Event *api.Event
 	// if provided, perform a strategic patch when updating the record on the server
 	Patch []byte
 	// if true, do no further processing of the event
@@ -342,7 +342,7 @@ func NewEventCorrelator(clock clock.Clock) *EventCorrelator {
 }
 
 // EventCorrelate filters, aggregates, counts, and de-duplicates all incoming events
-func (c *EventCorrelator) EventCorrelate(newEvent *v1.Event) (*EventCorrelateResult, error) {
+func (c *EventCorrelator) EventCorrelate(newEvent *api.Event) (*EventCorrelateResult, error) {
 	if c.filterFunc(newEvent) {
 		return &EventCorrelateResult{Skip: true}, nil
 	}
@@ -355,6 +355,6 @@ func (c *EventCorrelator) EventCorrelate(newEvent *v1.Event) (*EventCorrelateRes
 }
 
 // UpdateState based on the latest observed state from server
-func (c *EventCorrelator) UpdateState(event *v1.Event) {
+func (c *EventCorrelator) UpdateState(event *api.Event) {
 	c.logger.updateState(event)
 }
