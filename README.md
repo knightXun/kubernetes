@@ -65,6 +65,17 @@ and work your way through the process that we've outlined.
 That said, if you have questions, reach out to us
 [one way or another][communication].
 
+## Dahua Cloud's Fork
+此版本基于 v1.10.7。需要从v1.6.7合入以下功能：
+1. kubelet Macvlan CNI插件
+2. controller 根据IP的label和annotation 申请、释放IP
+3. apiserver 的logdir admission插件，用来根据annotation 挂载hostpath做为日志目录
+4. scheduler 根据节点的标签来过滤调度节点 https://gitlab.dahuatech.com/dhc/kubernetes/merge_requests/94/diffs
+5. RC/Statefulset/Job的各类消息，包括： PodReady/PodNotReady/PodDelete/PodAdd/JobPodCompete。后来还加了RcReady/RcNotReady/StatefulsetReady/StatefulsetNotReady
+6. FC 插件修改
+7. kubelet提供rbd 卷resize接口
+8. 释放IP失败时发送 warning 消息
+
 [announcement]: https://cncf.io/news/announcement/2015/07/new-cloud-native-computing-foundation-drive-alignment-among-container
 [Borg]: https://research.google.com/pubs/pub43438.html
 [CNCF]: https://www.cncf.io/about
