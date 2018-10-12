@@ -231,7 +231,10 @@ import github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
 import strings "strings"
 import reflect "reflect"
 
-import io "io"
+import (
+	io "io"
+	"github.com/golang/glog"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -36359,6 +36362,7 @@ func (m *Pod) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if err := m.Status.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				glog.Errorf("Pod %v/%v ErrUnexpectedEOF", m.Namespace, m.Name)
 				return err
 			}
 			iNdEx = postIndex
@@ -36379,6 +36383,7 @@ func (m *Pod) Unmarshal(dAtA []byte) error {
 	}
 
 	if iNdEx > l {
+		glog.Errorf("Pod %v/%v ErrUnexpectedEOF", m.Namespace, m.Name)
 		return io.ErrUnexpectedEOF
 	}
 	return nil
@@ -39292,6 +39297,7 @@ func (m *PodStatus) Unmarshal(dAtA []byte) error {
 	for iNdEx < l {
 		preIndex := iNdEx
 		var wire uint64
+		var b byte
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
 				return ErrIntOverflowGenerated
@@ -39299,7 +39305,7 @@ func (m *PodStatus) Unmarshal(dAtA []byte) error {
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
 			}
-			b := dAtA[iNdEx]
+			b = dAtA[iNdEx]
 			iNdEx++
 			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
@@ -39313,6 +39319,16 @@ func (m *PodStatus) Unmarshal(dAtA []byte) error {
 		}
 		if fieldNum <= 0 {
 			return fmt.Errorf("proto: PodStatus: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		// Author: Haoyuan Ge
+		// Transform probobuf type from boolean to byte.
+		if fieldNum == 11 && wireType != 2 && iNdEx >= 1 {
+			glog.Warningf("Transform pod status for bingli's status: IsScale.")
+			wireType = 2
+			// The wireType should be byte, which is 2
+			dAtA[iNdEx - 1] |= 2
+			// Set the length to 0
+			dAtA[iNdEx] = 0
 		}
 		switch fieldNum {
 		case 1:
@@ -39634,6 +39650,8 @@ func (m *PodStatus) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+
+
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
 				return ErrInvalidLengthGenerated
