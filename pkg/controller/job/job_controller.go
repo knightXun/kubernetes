@@ -46,6 +46,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/metrics"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const statusUpdateRetries = 3
@@ -268,6 +269,18 @@ func (jm *JobController) updatePod(old, cur interface{}) {
 			return
 		}
 		jm.enqueueController(job, immediate)
+		if oldPod.Status.Phase != curPod.Status.Phase {
+			var action string
+			switch curPod.Status.Phase {
+			case v1.PodSucceeded:
+				action = string(v1.PodSucceeded)
+			case v1.PodFailed:
+				action = "JobPodNotReady"
+			case v1.PodRunning:
+				action = "JobPodReady"
+			}
+			podchange.RecordPodEvent(jm.recorder, curPod, "JobUpdate", action)
+		}
 		return
 	}
 
@@ -532,6 +545,9 @@ func (jm *JobController) syncJob(key string) (bool, error) {
 		active = 0
 		job.Status.Conditions = append(job.Status.Conditions, newCondition(batch.JobFailed, failureReason, failureMessage))
 		jm.recorder.Event(&job, v1.EventTypeWarning, failureReason, failureMessage)
+
+		//job.Status.Conditions = append(job.Status.Conditions, newCondition(batch.JobFailed, "DeadlineExceeded", "Job was active longer than specified deadline"))
+		jm.recorder.Event(&job, v1.EventTypeNormal, failureReason, failureMessage)
 	} else {
 		if jobNeedsSync && job.DeletionTimestamp == nil {
 			active, manageJobErr = jm.manageJob(activePods, succeeded, &job)
@@ -587,6 +603,19 @@ func (jm *JobController) syncJob(key string) (bool, error) {
 
 		if err := jm.updateHandler(&job); err != nil {
 			return forget, err
+		}
+
+		// Send events and delete pod if job is finished.
+		if IsJobSuccessed(&job) {
+			go func() {
+				time.Sleep(2 * time.Second)
+				podchange.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobComplete", "JobComplete")
+			}()
+		} else if IsJobFailed(&job) {
+			go func() {
+				time.Sleep(2 * time.Second)
+				podchange.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobFailed", "JobFailed")
+			}()
 		}
 
 		if jobHaveNewFailure && !IsJobFinished(&job) {

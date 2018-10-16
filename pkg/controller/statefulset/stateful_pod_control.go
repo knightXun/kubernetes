@@ -30,6 +30,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 // StatefulPodControlInterface defines the interface that StatefulSetController uses to create, update, and delete Pods,
@@ -77,11 +78,14 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 		return err
 	}
 	// If we created the PVCs attempt to create the Pod
-	_, err := spc.client.CoreV1().Pods(set.Namespace).Create(pod)
+	newPod, err := spc.client.CoreV1().Pods(set.Namespace).Create(pod)
 	// sink already exists errors
 	if apierrors.IsAlreadyExists(err) {
 		return err
 	}
+	// Send events for servicemanager.
+	podchange.RecordPodEvent(spc.recorder, newPod, "StatefulSetUpdate", "StatefulSetPodAdd")
+
 	spc.recordPodEvent("create", set, pod, err)
 	return err
 }
@@ -136,6 +140,8 @@ func (spc *realStatefulPodControl) UpdateStatefulPod(set *apps.StatefulSet, pod 
 func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod *v1.Pod) error {
 	err := spc.client.CoreV1().Pods(set.Namespace).Delete(pod.Name, nil)
 	spc.recordPodEvent("delete", set, pod, err)
+	// Send events for servicemanager.
+	podchange.RecordPodEvent(spc.recorder, pod, "StatefulSetUpdate", "StatefulSetPodDelete")
 	return err
 }
 

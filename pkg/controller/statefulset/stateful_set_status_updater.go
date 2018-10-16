@@ -24,6 +24,8 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	appslisters "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/kubernetes/pkg/util/podchange"
+	"k8s.io/client-go/tools/record"
 )
 
 // StatefulSetStatusUpdaterInterface is an interface used to update the StatefulSetStatus associated with a StatefulSet.
@@ -38,13 +40,19 @@ type StatefulSetStatusUpdaterInterface interface {
 // using the supplied client and setLister.
 func NewRealStatefulSetStatusUpdater(
 	client clientset.Interface,
-	setLister appslisters.StatefulSetLister) StatefulSetStatusUpdaterInterface {
-	return &realStatefulSetStatusUpdater{client, setLister}
+	setLister appslisters.StatefulSetLister,
+	recorder  record.EventRecorder) StatefulSetStatusUpdaterInterface {
+	return &realStatefulSetStatusUpdater{
+		client: client,
+		setLister: setLister,
+		recorder: recorder,
+	}
 }
 
 type realStatefulSetStatusUpdater struct {
 	client    clientset.Interface
 	setLister appslisters.StatefulSetLister
+	recorder  record.EventRecorder
 }
 
 func (ssu *realStatefulSetStatusUpdater) UpdateStatefulSetStatus(
@@ -53,8 +61,21 @@ func (ssu *realStatefulSetStatusUpdater) UpdateStatefulSetStatus(
 	// don't wait due to limited number of clients, but backoff after the default number of steps
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		set.Status = *status
+		var beReady, beNotReady bool
+
+		if status.ReadyReplicas >= *set.Spec.Replicas {
+			beReady = true
+		} else if status.Replicas < *set.Spec.Replicas {
+			beNotReady = true
+		}
 		_, updateErr := ssu.client.AppsV1().StatefulSets(set.Namespace).UpdateStatus(set)
 		if updateErr == nil {
+			if beReady {
+				podchange.RecordStatefulSetStatusEvent(ssu.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetReady", set.Labels, set.Status.Replicas)
+			}
+			if beNotReady {
+				podchange.RecordStatefulSetStatusEvent(ssu.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetNotReady", set.Labels, set.Status.Replicas)
+			}
 			return nil
 		}
 		if updated, err := ssu.setLister.StatefulSets(set.Namespace).Get(set.Name); err == nil {

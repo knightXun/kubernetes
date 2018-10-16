@@ -40,6 +40,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/controller/history"
+	"k8s.io/kubernetes/pkg/util/podchange"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
 	"github.com/golang/glog"
 )
@@ -75,6 +77,8 @@ type StatefulSetController struct {
 	revListerSynced cache.InformerSynced
 	// StatefulSets that need to be synced.
 	queue workqueue.RateLimitingInterface
+
+	recorder record.EventRecorder
 }
 
 // NewStatefulSetController creates a new statefulset controller.
@@ -89,6 +93,7 @@ func NewStatefulSetController(
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(kubeClient.CoreV1().RESTClient()).Events("")})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "statefulset-controller"})
+	eventrecorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "statefulset"})
 
 	ssc := &StatefulSetController{
 		kubeClient: kubeClient,
@@ -99,13 +104,14 @@ func NewStatefulSetController(
 				podInformer.Lister(),
 				pvcInformer.Lister(),
 				recorder),
-			NewRealStatefulSetStatusUpdater(kubeClient, setInformer.Lister()),
+			NewRealStatefulSetStatusUpdater(kubeClient, setInformer.Lister(), eventrecorder),
 			history.NewHistory(kubeClient, revInformer.Lister()),
 			recorder,
 		),
 		pvcListerSynced: pvcInformer.Informer().HasSynced,
 		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "statefulset"),
 		podControl:      controller.RealPodControl{KubeClient: kubeClient, Recorder: recorder},
+		recorder:        eventrecorder,
 
 		revListerSynced: revInformer.Informer().HasSynced,
 	}
@@ -225,6 +231,14 @@ func (ssc *StatefulSetController) updatePod(old, cur interface{}) {
 			return
 		}
 		glog.V(4).Infof("Pod %s updated, objectMeta %+v -> %+v.", curPod.Name, oldPod.ObjectMeta, curPod.ObjectMeta)
+
+		// Send RcPod events for DHC
+		if !podutil.IsPodReady(oldPod) && podutil.IsPodReady(curPod) {
+			podchange.RecordPodEvent(ssc.recorder, curPod, "StatefulSetUpdate", "StatefulSetPodReady")
+		} else if podutil.IsPodReady(oldPod) && !podutil.IsPodReady(curPod) {
+			podchange.RecordPodEvent(ssc.recorder, curPod, "StatefulSetUpdate", "StatefulSetPodNotReady")
+		}
+
 		ssc.enqueueStatefulSet(set)
 		return
 	}
