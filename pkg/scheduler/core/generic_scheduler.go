@@ -42,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/volumebinder"
 
 	"github.com/golang/glog"
+	"encoding/base64"
 )
 
 // FailedPredicateMap declares a map[string][]algorithm.PredicateFailureReason type.
@@ -66,6 +67,7 @@ var ErrNoNodesAvailable = fmt.Errorf("no nodes available to schedule pods")
 const (
 	// NoNodeAvailableMsg is used to format message when no nodes available.
 	NoNodeAvailableMsg = "0/%v nodes are available"
+    LocalVolumeAnnotaion = "dhc.data.local"
 )
 
 // Error returns detailed information of why the pod failed to fit on each node
@@ -145,6 +147,10 @@ func (g *genericScheduler) Schedule(pod *v1.Pod, nodeLister algorithm.NodeLister
 			FailedPredicates: failedPredicateMap,
 		}
 	}
+
+	// filter local volumes
+	filteredNodes = filterLocalVolumesNodes(pod, filteredNodes)
+
 	metrics.SchedulingAlgorithmPredicateEvaluationDuration.Observe(metrics.SinceInMicroseconds(startPredicateEvalTime))
 
 	trace.Step("Prioritizing")
@@ -195,6 +201,60 @@ func (g *genericScheduler) selectHost(priorityList schedulerapi.HostPriorityList
 	g.lastNodeIndexLock.Unlock()
 
 	return priorityList[ix].Host, nil
+}
+
+// Input: [data3:v1,data5:v2]. Returns {"data3:v1": true, "data5:v2":true}
+func getDataMapfromString(str string) map[string]bool {
+	var m map[string]bool
+	decoded, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		glog.Errorf("%v decode error:", str, err)
+		return m
+	}
+	decodedStr := string(decoded)
+	glog.Info(decodedStr)
+	if len(decodedStr) == 0 {
+		return m
+	}
+	m = make(map[string]bool)
+	dataArr := strings.Split(decodedStr, ",")
+	for _, data := range dataArr {
+		m[data] = true
+	}
+	return m
+}
+
+func filterLocalVolumesNodes(pod *v1.Pod, nodes []*v1.Node) []*v1.Node {
+	if localVolAnno := pod.Annotations[LocalVolumeAnnotaion]; localVolAnno != "" {
+		glog.V(6).Infof("filterLocalVolumesNodes for po: %v/%v", pod.Namespace, pod.Name)
+		var filteredNodes []*v1.Node
+		dataMap := getDataMapfromString(localVolAnno)
+		if len(dataMap) == 0 {
+			glog.Warningf("No valid data found for po: %v/%v", pod.Namespace, pod.Name)
+			return nodes
+		}
+
+		for _, node := range nodes {
+			if node.Annotations[LocalVolumeAnnotaion] != "" {
+				nodeDataMap := getDataMapfromString(node.Annotations[LocalVolumeAnnotaion])
+				count := len(dataMap)
+				for data := range dataMap {
+					if nodeDataMap[data] {
+						count--
+					}
+				}
+				if count == 0 {
+					glog.V(6).Infof("%v found matched data in %v ", pod.Name, node.Name)
+					filteredNodes = append(filteredNodes, node)
+				}
+
+			}
+		}
+		if len(filteredNodes) > 0 {
+			return filteredNodes
+		}
+	}
+	return nodes
 }
 
 // preempt finds nodes with pods that can be preempted to make room for "pod" to
