@@ -61,6 +61,7 @@ import (
 	kubelettypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/util/configz"
 	"k8s.io/kubernetes/pkg/util/limitwriter"
+	volumeHandler "k8s.io/kubernetes/pkg/kubelet/server/volume"
 )
 
 const (
@@ -69,6 +70,7 @@ const (
 	specPath            = "/spec/"
 	statsPath           = "/stats/"
 	logsPath            = "/logs/"
+	volumePath  		= "/volumes/"
 )
 
 // Server is a http.Handler which exposes kubelet functionality over HTTP.
@@ -289,6 +291,9 @@ func (s *Server) InstallDefaultHandlers() {
 		To(s.getSpec).
 		Operation("getSpec").
 		Writes(cadvisorapi.MachineInfo{}))
+	s.restfulCont.Add(ws)
+
+	ws = volumeHandler.CreateHandlers(volumePath)
 	s.restfulCont.Add(ws)
 }
 
