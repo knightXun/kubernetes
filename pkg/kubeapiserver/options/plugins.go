@@ -58,6 +58,7 @@ import (
 	"k8s.io/apiserver/pkg/admission/plugin/namespace/lifecycle"
 	mutatingwebhook "k8s.io/apiserver/pkg/admission/plugin/webhook/mutating"
 	validatingwebhook "k8s.io/apiserver/pkg/admission/plugin/webhook/validating"
+	"k8s.io/kubernetes/plugin/pkg/admission/logdir"
 )
 
 // AllOrderedPlugins is the list of all the plugins in order.
@@ -94,6 +95,7 @@ var AllOrderedPlugins = []string{
 	validatingwebhook.PluginName,            // ValidatingAdmissionWebhook
 	resourcequota.PluginName,                // ResourceQuota
 	deny.PluginName,                         // AlwaysDeny
+	logdir.PluginName,                       // LogDir
 }
 
 // RegisterAllAdmissionPlugins registers all admission plugins and
@@ -126,6 +128,8 @@ func RegisterAllAdmissionPlugins(plugins *admission.Plugins) {
 	setdefault.Register(plugins)
 	resize.Register(plugins)
 	storageobjectinuseprotection.Register(plugins)
+	// LogDir for mounting the log directory as hostPath: /var/log/containers/xxxxx
+	logdir.Register(plugins)
 }
 
 // DefaultOffAdmissionPlugins get admission plugins off by default for kube-apiserver.
