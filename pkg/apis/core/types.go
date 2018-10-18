@@ -878,6 +878,8 @@ type FCVolumeSource struct {
 	// Either WWIDs or TargetWWNs and Lun must be set, but not both simultaneously.
 	// +optional
 	WWIDs []string
+
+	RemoteVolumeID string
 }
 
 // FlexPersistentVolumeSource represents a generic persistent volume resource that is

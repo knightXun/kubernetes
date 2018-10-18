@@ -1386,7 +1386,7 @@ type FCVolumeSource struct {
 	// +optional
 	WWIDs []string `json:"wwids,omitempty" protobuf:"bytes,5,rep,name=wwids"`
 
-	RemoteVolumeID string `json:"remoteVolumeID,omitempty" protobuf:"bytes,5,opt,name=remoteVolumeID"`
+	RemoteVolumeID string `json:"remoteVolumeID,omitempty" protobuf:"bytes,6,opt,name=remoteVolumeID"`
 }
 
 // AzureFile represents an Azure File Service mount on the host and bind mount to the pod.
