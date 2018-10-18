@@ -44,6 +44,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util/operationexecutor"
 	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
+	"sync"
 )
 
 const (
@@ -297,4 +298,24 @@ func (expc *expandController) GetNodeLabels() (map[string]string, error) {
 
 func (expc *expandController) GetNodeName() types.NodeName {
 	return ""
+}
+
+func (ctrl *expandController) GetRemoteVolumeServerAddress() string {
+	return ""
+}
+
+func (ctrl *expandController) GetInstanceID() string {
+	return ""
+}
+
+func (kvh *expandController) GetVolumeType() string {
+	return ""
+}
+
+func (kvh *expandController) GetPodDir(podUID string) string {
+	return ""
+}
+
+func (kvh *expandController) GetFcMutex() *sync.Mutex {
+	return nil
 }
