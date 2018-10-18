@@ -536,6 +536,8 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		iptablesDropBit:                         int(kubeCfg.IPTablesDropBit),
 		experimentalHostUserNamespaceDefaulting: utilfeature.DefaultFeatureGate.Enabled(features.ExperimentalHostUserNamespaceDefaultingGate),
 		keepTerminatedPodVolumes:                keepTerminatedPodVolumes,
+		remoteVolumeServerAddr:                	 kubeCfg.RemoteVolumeServerAddr,
+		fcmutex:                                 &sync.Mutex{},
 	}
 
 	secretManager := secret.NewCachingSecretManager(
@@ -1210,6 +1212,14 @@ type Kubelet struct {
 	// This flag, if set, instructs the kubelet to keep volumes from terminated pods mounted to the node.
 	// This can be useful for debugging volume related issues.
 	keepTerminatedPodVolumes bool // DEPRECATED
+
+	instanceID string
+
+	diskType string
+
+	remoteVolumeServerAddr string
+
+	fcmutex *sync.Mutex
 }
 
 func allLocalIPsWithoutLoopback() ([]net.IP, error) {

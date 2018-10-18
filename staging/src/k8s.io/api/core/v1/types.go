@@ -1385,6 +1385,8 @@ type FCVolumeSource struct {
 	// Either wwids or combination of targetWWNs and lun must be set, but not both simultaneously.
 	// +optional
 	WWIDs []string `json:"wwids,omitempty" protobuf:"bytes,5,rep,name=wwids"`
+
+	RemoteVolumeID string `json:"remoteVolumeID,omitempty" protobuf:"bytes,5,opt,name=remoteVolumeID"`
 }
 
 // AzureFile represents an Azure File Service mount on the host and bind mount to the pod.

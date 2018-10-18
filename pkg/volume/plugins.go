@@ -307,6 +307,16 @@ type VolumeHost interface {
 
 	// Returns the name of the node
 	GetNodeName() types.NodeName
+
+	GetRemoteVolumeServerAddress() string
+
+	GetInstanceID() string
+
+	GetVolumeType() string
+
+	GetPodDir(string) string
+
+	GetFcMutex() *sync.Mutex
 }
 
 // VolumePluginMgr tracks registered plugins.

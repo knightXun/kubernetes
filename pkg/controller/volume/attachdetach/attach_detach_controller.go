@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"sync"
 
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
@@ -606,4 +607,24 @@ func (adc *attachDetachController) GetNodeLabels() (map[string]string, error) {
 
 func (adc *attachDetachController) GetNodeName() types.NodeName {
 	return ""
+}
+
+func (adc *attachDetachController) GetRemoteVolumeServerAddress() string {
+	return ""
+}
+
+func (adc *attachDetachController) GetInstanceID() string {
+	return ""
+}
+
+func (adc *attachDetachController) GetVolumeType() string {
+	return ""
+}
+
+func (kvh *attachDetachController) GetPodDir(podUID string) string {
+	return ""
+}
+
+func (kvh *attachDetachController) GetFcMutex() *sync.Mutex {
+	return nil
 }

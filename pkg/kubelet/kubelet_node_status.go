@@ -243,6 +243,11 @@ func (kl *Kubelet) initialNode() (*v1.Node, error) {
 			Unschedulable: !kl.registerSchedulable,
 		},
 	}
+	kl.GetInstanceID()
+	if kl.diskType != "" {
+		node.Labels["RemoteVolumeType"] = kl.diskType
+	}
+
 	nodeTaints := make([]v1.Taint, 0)
 	if len(kl.registerWithTaints) > 0 {
 		taints := make([]v1.Taint, len(kl.registerWithTaints))
