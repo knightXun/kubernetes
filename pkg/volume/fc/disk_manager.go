@@ -24,6 +24,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/pkg/volume"
 	"strings"
+	"os/exec"
 )
 
 // Abstract interface to disk operations.
@@ -86,6 +87,14 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 		os.Remove(volPath)
 
 		return err
+	} else {
+		if b.fsType == "ext4" || b.fsType == "" {
+			output, err := exec.Command("resize2fs", globalPDPath).Output()
+			glog.V(6).Infof("resize2fs %v: %v/%v", globalPDPath, string(output), err)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	if !b.readOnly {
