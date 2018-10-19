@@ -41,6 +41,7 @@ import (
 	nodepkg "k8s.io/kubernetes/pkg/util/node"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 var (
@@ -96,6 +97,16 @@ func DeletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 		recorder.Eventf(&pod, v1.EventTypeNormal, "NodeControllerEviction", "Marking for deletion Pod %s from Node %s", pod.Name, nodeName)
 		if err := kubeClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, nil); err != nil {
 			return false, err
+		}
+		if len(pod.OwnerReferences) > 0 {
+			switch pod.OwnerReferences[0].Kind {
+			case "ReplicationController":
+				podchange.RecordRCPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, pod.Name, "RcPodDelete", "RcPodDelete")
+			case "Job":
+				podchange.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, pod.Name, "JobPodDelete", "JobPodDelete")
+			case "StatefulSet":
+				podchange.RecordJobPodEvent(recorder, pod.OwnerReferences[0].Name, pod.Namespace, pod.Name, "StatefulSetPodDelete", "StatefulSetPodDelete")
+			}
 		}
 		remaining = true
 	}

@@ -30,10 +30,12 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	unversionedextensions "k8s.io/client-go/kubernetes/typed/extensions/v1beta1"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	"k8s.io/kubernetes/pkg/util/podchange"
+	"k8s.io/client-go/tools/record"
 )
 
 // updateReplicaSetStatus attempts to update the Status.Replicas of the given ReplicaSet, with a single GET/PUT retry.
-func updateReplicaSetStatus(c unversionedextensions.ReplicaSetInterface, rs *extensions.ReplicaSet, newStatus extensions.ReplicaSetStatus) (*extensions.ReplicaSet, error) {
+func updateReplicaSetStatus(c unversionedextensions.ReplicaSetInterface, rs *extensions.ReplicaSet, newStatus extensions.ReplicaSetStatus, recorder record.EventRecorder) (*extensions.ReplicaSet, error) {
 	// This is the steady state. It happens when the ReplicaSet doesn't have any expectations, since
 	// we do a periodic relist every 30s. If the generations differ but the replicas are
 	// the same, a caller might've resized to the same replica count.
@@ -52,6 +54,17 @@ func updateReplicaSetStatus(c unversionedextensions.ReplicaSetInterface, rs *ext
 	// same status.
 	newStatus.ObservedGeneration = rs.Generation
 
+	// Variables indicate whethter the RC becomes ready/unready
+	var beReady, beNotReady bool
+	if newStatus.ReadyReplicas == *rs.Spec.Replicas && newStatus.ReadyReplicas > rs.Status.ReadyReplicas {
+		// ReadyReplicas increased to spec.Replicas. RC is ready.
+		glog.V(6).Infof("%v beReady!", rs.Name)
+		beReady = true
+	} else if rs.Status.ReadyReplicas == *rs.Spec.Replicas && newStatus.ReadyReplicas < rs.Status.ReadyReplicas {
+		// ReadyReplicas decreased from spec.Replicas. RC is NOT ready.
+		beNotReady = true
+		glog.V(6).Infof("%v beNotReady!", rs.Name)
+	}
 	var getErr, updateErr error
 	var updatedRS *extensions.ReplicaSet
 	for i, rs := 0, rs; ; i++ {
@@ -65,6 +78,11 @@ func updateReplicaSetStatus(c unversionedextensions.ReplicaSetInterface, rs *ext
 		rs.Status = newStatus
 		updatedRS, updateErr = c.UpdateStatus(rs)
 		if updateErr == nil {
+			if beReady {
+				podchange.RecordRCStatusEvent(recorder, rs.Name, rs.Namespace, "RcStatusUpdate", "RcReady", rs.Labels, rs.Status.ReadyReplicas)
+			} else if beNotReady {
+				podchange.RecordRCStatusEvent(recorder, rs.Name, rs.Namespace, "RcStatusUpdate", "RcNotReady", rs.Labels, rs.Status.ReadyReplicas)
+			}
 			return updatedRS, nil
 		}
 		// Stop retrying if we exceed statusUpdateRetries - the replicaSet will be requeued with a rate limit.

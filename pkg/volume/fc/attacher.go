@@ -31,6 +31,8 @@ import (
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
+	"os/exec"
+	"path/filepath"
 )
 
 type fcAttacher struct {
@@ -67,7 +69,49 @@ func (attacher *fcAttacher) VolumesAreAttached(specs []*volume.Spec, nodeName ty
 	return volumesAttachedCheck, nil
 }
 
-func (attacher *fcAttacher) WaitForAttach(spec *volume.Spec, devicePath string, _ *v1.Pod, timeout time.Duration) (string, error) {
+func (attacher *fcAttacher) WaitForAttach(spec *volume.Spec, devicePath string, pod *v1.Pod, timeout time.Duration) (string, error) {
+	attacher.host.GetFcMutex().Lock()
+	defer attacher.host.GetFcMutex().Unlock()
+	if spec.Volume.FC.RemoteVolumeID == "" {
+		return "", fmt.Errorf("Empty FC.RemoteVolumeID")
+	}
+
+	lun, wwns, _, err := Lock(attacher.host.GetRemoteVolumeServerAddress(), spec.Volume.FC.RemoteVolumeID, attacher.host.GetInstanceID(), string(pod.UID))
+	if err != nil {
+		glog.Errorf("fc: failed to setup: %v", err)
+		glog.Errorf("diskSetUp_failed, so we must unlock volume:%v", spec.Volume.FC.RemoteVolumeID)
+		if err.Error() != "no fc disk found" || err.Error() != "Is Likely Not Mount Point" {
+			glog.Errorf("diskSetUp_failed, clean %v", spec.Volume.FC.RemoteVolumeID)
+			if lun != "" && len(wwns) != 0 && spec.Volume.FC.RemoteVolumeID != "" {
+				volumeID := spec.Volume.FC.RemoteVolumeID
+				wwnsstr := strings.Join(wwns, ",")
+				lun := lun
+				glog.V(1).Infoln("RemoteDellVolume_Clean after disksetup failed")
+				out, err2 := exec.Command("/bin/bash", "-c", "/usr/bin/clean_removal.sh "+wwnsstr+" "+lun+" "+volumeID).CombinedOutput()
+				if err2 != nil {
+					glog.V(1).Infof("RemoteDellVolume_Clean clean fc device failed, meet error: %v , info: %v,"+
+						"volumeID=%v, wwns=%v, lun=%v", err, string(out), volumeID, wwnsstr, lun)
+					glog.Errorf("RemoteDellVolume_Clean clean fc device failed, meet error: %v , info: %v", err, string(out))
+					//err = fmt.Errorf("clean fc device failed, meet error: %v , info: %v", err, string(out))
+					//return err
+				}
+				err1 := UnlockWhenSetupFailed(attacher.host.GetRemoteVolumeServerAddress(), spec.Volume.FC.RemoteVolumeID, attacher.host.GetInstanceID(), string(pod.UID))
+				if err1 != nil {
+					glog.Errorf("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", volumeID, err1)
+					err = fmt.Errorf(err.Error() + "   " + err1.Error())
+					glog.Errorf("fc: failed to setup: %v", err)
+					return "", err
+				}
+				glog.V(1).Infoln("RemoteDellVolume_Clean after disksetup failed")
+				exec.Command("/bin/bash", "-c", "/usr/bin/clean_removal.sh "+wwnsstr+" "+lun+" "+volumeID).CombinedOutput()
+			}
+		}
+		glog.Errorf(err.Error())
+		return "", err
+	}
+
+	WriteVolumeInfoInPluginDir(attacher.host.GetPodDir(string(pod.UID)), spec.Name(), spec.Volume.FC.RemoteVolumeID, lun, wwns)
+
 	mounter, err := volumeSpecToMounter(spec, attacher.host)
 	if err != nil {
 		glog.Warningf("failed to get fc mounter: %v", err)
@@ -125,6 +169,8 @@ func (attacher *fcAttacher) MountDevice(spec *volume.Spec, devicePath string, de
 type fcDetacher struct {
 	mounter mount.Interface
 	manager diskManager
+	host    volume.VolumeHost
+	podUID  string
 }
 
 var _ volume.Detacher = &fcDetacher{}
@@ -133,6 +179,7 @@ func (plugin *fcPlugin) NewDetacher() (volume.Detacher, error) {
 	return &fcDetacher{
 		mounter: plugin.host.GetMounter(plugin.GetPluginName()),
 		manager: &FCUtil{},
+		host:  plugin.host,
 	}, nil
 }
 
@@ -219,4 +266,60 @@ func volumeSpecToUnmounter(mounter mount.Interface) *fcDiskUnmounter {
 		mounter:    mounter,
 		deviceUtil: volumeutil.NewDeviceHandler(volumeutil.NewIOHandler()),
 	}
+}
+
+func UnlockWhenSetupFailed(remoteVolumeServerAddress, volumeID, instanceID, podID string) error {
+	glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock Begin")
+	glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock, Try to UnlockFromPod Begin")
+	err1 := UnlockFromPod(remoteVolumeServerAddress, volumeID, podID)
+
+	glog.V(1).Info("UnlockWhenSetupFailed FibreChannel Unlock, Try to RemoteDetach from Server")
+	err2 := DetachFromServer(remoteVolumeServerAddress, instanceID, volumeID)
+	if err2 != nil {
+		glog.Errorf("UnlockWhenSetupFailed FibreChannel Unlock, RemoteDetach Failed: %v", err2)
+		var err error
+		if err1 != nil {
+			err = fmt.Errorf(err1.Error() + " " + err2.Error())
+		} else {
+			err = err2
+		}
+		return err
+	}
+	return nil
+
+}
+
+func WriteVolumeInfoInPluginDir(rootpath, volName, volumeID, lun string, wwns []string) error {
+	//rootpath := fc.GetVolumeIDFilePath()
+	volumepath := filepath.Join(rootpath, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	glog.V(1).Infof("Write VolumeID: %v To %v", volName, volumepath)
+
+	os.Remove(volumepath)
+	os.Create(volumepath)
+
+	f, err := os.OpenFile(volumepath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		glog.Errorf("Create_Dellvolumeinfo error: %v", err)
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("volName=" + volumeID + "\n")
+	if err != nil {
+		glog.Errorf("Create_DellvolumeinfoFail to Write VolumeID: %v To %v , Meet %v", volumeID, volumepath, err)
+		return fmt.Errorf("Create_Dellvolumeinfo Fail to Write VolumeID: %v To %v , Meet %v", volumeID, volumepath, err)
+	}
+
+	_, err = f.WriteString("wwns=" + strings.Join(wwns, ",") + "\n")
+	if err != nil {
+		glog.Errorf("Create_Dellvolumeinfo Fail to Write Wwns: %v To %v , Meet %v", wwns, volumepath, err)
+		return fmt.Errorf("Fail to Write Wwns: %v To %v , Meet %v", wwns, volumepath, err)
+	}
+
+	_, err = f.WriteString("lun=" + lun + "\n")
+	if err != nil {
+		glog.Errorf("Create_Dellvolumeinfo Fail to Write Lun: %v To %v , Meet %v", lun, volumepath, err)
+		return fmt.Errorf("Fail to Write Lun: %v To %v , Meet %v", lun, volumepath, err)
+	}
+	return nil
 }

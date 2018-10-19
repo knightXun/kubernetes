@@ -1753,6 +1753,7 @@ func autoConvert_v1_FCVolumeSource_To_core_FCVolumeSource(in *v1.FCVolumeSource,
 	out.FSType = in.FSType
 	out.ReadOnly = in.ReadOnly
 	out.WWIDs = *(*[]string)(unsafe.Pointer(&in.WWIDs))
+	out.RemoteVolumeID = in.RemoteVolumeID
 	return nil
 }
 
@@ -1767,6 +1768,7 @@ func autoConvert_core_FCVolumeSource_To_v1_FCVolumeSource(in *core.FCVolumeSourc
 	out.FSType = in.FSType
 	out.ReadOnly = in.ReadOnly
 	out.WWIDs = *(*[]string)(unsafe.Pointer(&in.WWIDs))
+	out.RemoteVolumeID = in.RemoteVolumeID
 	return nil
 }
 

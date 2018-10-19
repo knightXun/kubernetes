@@ -58,6 +58,7 @@ import (
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/util/metrics"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const (
@@ -103,6 +104,8 @@ type ReplicaSetController struct {
 
 	// Controllers that need to be synced
 	queue workqueue.RateLimitingInterface
+
+	recorder record.EventRecorder
 }
 
 // NewReplicaSetController configures a replica set controller with the specified event recorder
@@ -110,21 +113,23 @@ func NewReplicaSetController(rsInformer extensionsinformers.ReplicaSetInformer, 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(kubeClient.CoreV1().RESTClient()).Events("")})
+	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "replicaset_controller"})
 	return NewBaseController(rsInformer, podInformer, kubeClient, burstReplicas,
 		extensions.SchemeGroupVersion.WithKind("ReplicaSet"),
 		"replicaset_controller",
 		"replicaset",
 		controller.RealPodControl{
 			KubeClient: kubeClient,
-			Recorder:   eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "replicaset-controller"}),
+			Recorder:   recorder,
 		},
+		recorder,
 	)
 }
 
 // NewBaseController is the implementation of NewReplicaSetController with additional injected
 // parameters so that it can also serve as the implementation of NewReplicationController.
 func NewBaseController(rsInformer extensionsinformers.ReplicaSetInformer, podInformer coreinformers.PodInformer, kubeClient clientset.Interface, burstReplicas int,
-	gvk schema.GroupVersionKind, metricOwnerName, queueName string, podControl controller.PodControlInterface) *ReplicaSetController {
+	gvk schema.GroupVersionKind, metricOwnerName, queueName string, podControl controller.PodControlInterface, recorder record.EventRecorder) *ReplicaSetController {
 	if kubeClient != nil && kubeClient.CoreV1().RESTClient().GetRateLimiter() != nil {
 		metrics.RegisterMetricAndTrackRateLimiterUsage(metricOwnerName, kubeClient.CoreV1().RESTClient().GetRateLimiter())
 	}
@@ -136,6 +141,7 @@ func NewBaseController(rsInformer extensionsinformers.ReplicaSetInformer, podInf
 		burstReplicas:    burstReplicas,
 		expectations:     controller.NewUIDTrackingControllerExpectations(controller.NewControllerExpectations()),
 		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), queueName),
+		recorder:		  recorder,
 	}
 
 	rsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -349,6 +355,12 @@ func (rsc *ReplicaSetController) updatePod(old, cur interface{}) {
 			// Add a second to avoid milliseconds skew in AddAfter.
 			// See https://github.com/kubernetes/kubernetes/issues/39785#issuecomment-279959133 for more info.
 			rsc.enqueueReplicaSetAfter(rs, (time.Duration(rs.Spec.MinReadySeconds)*time.Second)+time.Second)
+		}
+		// Send RcPod events for DHC
+		if !podutil.IsPodReady(oldPod) && podutil.IsPodReady(curPod) {
+			podchange.RecordPodEvent(rsc.recorder, curPod, "RcUpdate", "RcPodReady")
+		} else if podutil.IsPodReady(oldPod) && !podutil.IsPodReady(curPod) {
+			podchange.RecordPodEvent(rsc.recorder, curPod, "RcUpdate", "RcPodNotReady")
 		}
 		return
 	}
@@ -626,7 +638,7 @@ func (rsc *ReplicaSetController) syncReplicaSet(key string) error {
 	newStatus := calculateStatus(rs, filteredPods, manageReplicasErr)
 
 	// Always updates status as pods come up or die.
-	updatedRS, err := updateReplicaSetStatus(rsc.kubeClient.ExtensionsV1beta1().ReplicaSets(rs.Namespace), rs, newStatus)
+	updatedRS, err := updateReplicaSetStatus(rsc.kubeClient.ExtensionsV1beta1().ReplicaSets(rs.Namespace), rs, newStatus, rsc.recorder)
 	if err != nil {
 		// Multiple things could lead to this update failing. Requeuing the replica set ensures
 		// Returning an error causes a requeue without forcing a hotloop

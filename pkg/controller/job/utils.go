@@ -29,3 +29,21 @@ func IsJobFinished(j *batch.Job) bool {
 	}
 	return false
 }
+
+func IsJobSuccessed(j *batch.Job) bool {
+	for _, c := range j.Status.Conditions {
+		if c.Type == batch.JobComplete {
+			return true
+		}
+	}
+	return false
+}
+
+func IsJobFailed(j *batch.Job) bool {
+	for _, c := range j.Status.Conditions {
+		if c.Type == batch.JobFailed {
+			return true
+		}
+	}
+	return false
+}

@@ -73,7 +73,7 @@ func startHPAControllerWithMetricsClient(ctx ControllerContext, metricsClient me
 	hpaClientGoClient := ctx.ClientBuilder.ClientGoClientOrDie("horizontal-pod-autoscaler")
 	hpaClient := ctx.ClientBuilder.ClientOrDie("horizontal-pod-autoscaler")
 	hpaClientConfig := ctx.ClientBuilder.ConfigOrDie("horizontal-pod-autoscaler")
-
+	rcClient := ctx.ClientBuilder.ClientOrDie("replication-controller")
 	// TODO: we need something like deferred discovery REST mapper that calls invalidate
 	// on cache misses.
 	cachedDiscovery := discocache.NewMemCacheClient(hpaClientGoClient.Discovery())
@@ -102,6 +102,7 @@ func startHPAControllerWithMetricsClient(ctx ControllerContext, metricsClient me
 		ctx.ComponentConfig.HorizontalPodAutoscalerSyncPeriod.Duration,
 		ctx.ComponentConfig.HorizontalPodAutoscalerUpscaleForbiddenWindow.Duration,
 		ctx.ComponentConfig.HorizontalPodAutoscalerDownscaleForbiddenWindow.Duration,
+		rcClient,
 	).Run(ctx.Stop)
 	return true, nil
 }

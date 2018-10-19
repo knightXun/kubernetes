@@ -49,6 +49,7 @@ import (
 	taintutils "k8s.io/kubernetes/pkg/util/taints"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const (
@@ -571,6 +572,12 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
 		return err
 	} else {
+		switch controllerRef.Kind {
+		case "ReplicationController":
+			podchange.RecordRCPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "RcPodAdd", "RcPodAdd")
+		case "Job":
+			podchange.RecordJobPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "JobPodAdd", "JobPodAdd")
+		}
 		accessor, err := meta.Accessor(object)
 		if err != nil {
 			glog.Errorf("parentObject does not have ObjectMeta, %v", err)
@@ -588,10 +595,20 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 		return fmt.Errorf("object does not have ObjectMeta, %v", err)
 	}
 	glog.V(2).Infof("Controller %v deleting pod %v/%v", accessor.GetName(), namespace, podID)
+	pod, err := r.KubeClient.Core().Pods(namespace).Get(podID, metav1.GetOptions{})
+
 	if err := r.KubeClient.CoreV1().Pods(namespace).Delete(podID, nil); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
+		if pod != nil && len(pod.OwnerReferences) > 0 {
+			switch pod.OwnerReferences[0].Kind {
+			case "ReplicationController":
+				podchange.RecordRCPodEvent(r.Recorder, accessor.GetName(), namespace, pod.Name, "RcPodDelete", "RcPodDelete")
+			case "Job":
+				podchange.RecordJobPodEvent(r.Recorder, accessor.GetName(), namespace, pod.Name, "JobPodDelete", "JobPodDelete")
+			}
+		}
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 	}
 	return nil

@@ -110,6 +110,21 @@ func (f *fakeVolumeHost) GetKubeClient() clientset.Interface {
 	return f.kubeClient
 }
 
+func (f *fakeVolumeHost) GetPodDir(string) string {
+	return ""
+}
+func (f *fakeVolumeHost) GetVolumeType() string {
+	return ""
+}
+
+func (f *fakeVolumeHost) GetInstanceID() string {
+	return ""
+}
+
+func (f *fakeVolumeHost) GetRemoteVolumeServerAddress() string {
+	return ""
+}
+
 func (f *fakeVolumeHost) GetCloudProvider() cloudprovider.Interface {
 	return f.cloud
 }

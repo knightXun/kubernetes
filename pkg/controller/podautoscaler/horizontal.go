@@ -46,11 +46,15 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/controller"
+	clientset "k8s.io/client-go/kubernetes"
+	"github.com/golang/groupcache/lru"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 var (
 	scaleUpLimitFactor  = 2.0
 	scaleUpLimitMinimum = 4.0
+	LruCacheSize =  10000
 )
 
 // HorizontalController is responsible for the synchronizing HPA objects stored
@@ -71,6 +75,8 @@ type HorizontalController struct {
 	// NewHorizontalController.
 	hpaLister       autoscalinglisters.HorizontalPodAutoscalerLister
 	hpaListerSynced cache.InformerSynced
+	lru		*lru.Cache
+	rcClient 	clientset.Interface
 
 	// Controllers that need to be synced
 	queue workqueue.RateLimitingInterface
@@ -87,6 +93,7 @@ func NewHorizontalController(
 	resyncPeriod time.Duration,
 	upscaleForbiddenWindow time.Duration,
 	downscaleForbiddenWindow time.Duration,
+	rcClient clientset.Interface,
 
 ) *HorizontalController {
 	broadcaster := record.NewBroadcaster()
@@ -102,6 +109,7 @@ func NewHorizontalController(
 		hpaNamespacer:            hpaNamespacer,
 		upscaleForbiddenWindow:   upscaleForbiddenWindow,
 		downscaleForbiddenWindow: downscaleForbiddenWindow,
+		rcClient:                 rcClient,
 		queue:  workqueue.NewNamedRateLimitingQueue(NewDefaultHPARateLimiter(resyncPeriod), "horizontalpodautoscaler"),
 		mapper: mapper,
 	}
@@ -116,6 +124,7 @@ func NewHorizontalController(
 	)
 	hpaController.hpaLister = hpaInformer.Lister()
 	hpaController.hpaListerSynced = hpaInformer.Informer().HasSynced
+	hpaController.lru = lru.New(LruCacheSize)
 
 	return hpaController
 }
@@ -497,6 +506,23 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 
 	if rescale {
 		scale.Spec.Replicas = desiredReplicas
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
+			rcName := hpa.Spec.ScaleTargetRef.Name
+			rcNamespace := hpa.Namespace
+			var lastScaleTime string
+			if hpa.Status.LastScaleTime == nil {
+				lastScaleTime = hpa.CreationTimestamp.Time.String()
+			} else {
+				lastScaleTime = hpa.Status.LastScaleTime.String()
+			}
+			lruKey := hpa.Name + "/begin/" + lastScaleTime
+			fmt.Println(lruKey)
+			res, _ := a.lru.Get(lruKey)
+			if res == nil  {
+				a.lru.Add(lruKey, struct{}{})
+				podchange.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentReplicas, desiredReplicas, "ScaleBegin")
+			}
+		}
 		_, err = a.scaleNamespacer.Scales(hpa.Namespace).Update(targetGR, scale)
 		if err != nil {
 			a.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; reason: %s; error: %v", desiredReplicas, rescaleReason, err.Error())
@@ -512,6 +538,30 @@ func (a *HorizontalController) reconcileAutoscaler(hpav1Shared *autoscalingv1.Ho
 		glog.Infof("Successful rescale of %s, old size: %d, new size: %d, reason: %s",
 			hpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
+		if hpa.Spec.ScaleTargetRef.Kind == "ReplicationController" {
+			//rc, err  := a.scaleNamespacer.Scales(hpa.Namespace).GetRc(hpa.Namespace, hpa.Spec.ScaleTargetRef.Name)
+			rc, err  := a.rcClient.Core().ReplicationControllers(hpa.Namespace).Get(hpa.Spec.ScaleTargetRef.Name, metav1.GetOptions{})
+			if err == nil && rc != nil {
+				currentRcAvailableNum := rc.Status.ReadyReplicas
+				glog.V(4).Infof("get rc", currentRcAvailableNum, desiredReplicas, hpa.Status.LastScaleTime)
+				if currentRcAvailableNum == desiredReplicas && hpa.Status.LastScaleTime != nil {
+					glog.V(4).Infof("before report event")
+					rcName := hpa.Spec.ScaleTargetRef.Name
+					rcNamespace := hpa.Namespace
+					var lastScaleTime string
+					lastScaleTime = hpa.Status.LastScaleTime.String()
+
+					lruKey := hpa.Name + "/end/" + lastScaleTime
+					fmt.Println(lruKey)
+					res, _ := a.lru.Get(lruKey)
+					if res == nil {
+						a.lru.Add(lruKey, struct {}{})
+						podchange.RecorcRCAutoScaleEvent(a.eventRecorder, rcName, rcNamespace, "HpaScale", currentRcAvailableNum, desiredReplicas, "ScaleEnd")
+					}
+				}
+			}
+		}
+
 		glog.V(4).Infof("decided not to scale %s to %v (last scale time was %s)", reference, desiredReplicas, hpa.Status.LastScaleTime)
 		desiredReplicas = currentReplicas
 	}

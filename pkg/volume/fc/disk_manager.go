@@ -21,7 +21,10 @@ import (
 
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/util/mount"
+	"k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/pkg/volume"
+	"strings"
+	"os/exec"
 )
 
 // Abstract interface to disk operations.
@@ -84,6 +87,14 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 		os.Remove(volPath)
 
 		return err
+	} else {
+		if b.fsType == "ext4" || b.fsType == "" {
+			output, err := exec.Command("resize2fs", globalPDPath).Output()
+			glog.V(6).Infof("resize2fs %v: %v/%v", globalPDPath, string(output), err)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	if !b.readOnly {
@@ -91,4 +102,29 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 	}
 
 	return nil
+}
+
+func getDMDiskName(wwns []string, lun string, io ioHandler) string {
+	for _, wwn := range wwns {
+		_, dm := findDisk(wwn, lun, io, util.NewDeviceHandler(util.NewIOHandler()))
+		if dm != "" {
+			return dm
+		}
+	}
+	return ""
+}
+
+func getDMSlaves(dm string, io ioHandler) int {
+	dmNames := strings.Split(dm,"/")
+	if len(dmNames) != 3 {
+		return 0
+	}
+	slaves, err := io.ReadDir("/sys/block/" + dmNames[2] + "/slaves/")
+	if err != nil {
+		glog.V(1).Infof("RemoveDellVolume_Fail GetDMSlaves error: ", err.Error())
+		return 0
+	} else {
+		glog.V(1).Infof("RemoveDellVolume_Fail GetDMSlaves Numbers: ", string(len(slaves)))
+		return len(slaves)
+	}
 }

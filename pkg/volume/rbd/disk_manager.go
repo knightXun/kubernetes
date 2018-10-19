@@ -32,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
+	"os/exec"
 )
 
 // Abstract interface to disk operations.
@@ -91,6 +92,14 @@ func diskSetUp(manager diskManager, b rbdMounter, volPath string, mounter mount.
 	if err != nil {
 		glog.Errorf("failed to bind mount:%s", globalPDPath)
 		return err
+	} else {
+		if b.fsType == "ext4" || b.fsType == "" { //默认为ext4
+			output, err := exec.Command("resize2fs", globalPDPath).Output()
+			if err != nil {
+				glog.V(6).Infof("resize2fs %v: %v/%v", b.Image, string(output), err)
+				return err
+			}
+		}
 	}
 	glog.V(3).Infof("rbd: successfully bind mount %s to %s with options %v", globalPDPath, volPath, mountOptions)
 

@@ -19,6 +19,7 @@ package persistentvolume
 import (
 	"fmt"
 	"net"
+	"sync"
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -111,4 +112,24 @@ func (ctrl *PersistentVolumeController) GetNodeLabels() (map[string]string, erro
 
 func (ctrl *PersistentVolumeController) GetNodeName() types.NodeName {
 	return ""
+}
+
+func (ctrl *PersistentVolumeController) GetRemoteVolumeServerAddress() string {
+	return ""
+}
+
+func (ctrl *PersistentVolumeController) GetInstanceID() string {
+	return ""
+}
+
+func (kvh *PersistentVolumeController) GetVolumeType() string {
+	return ""
+}
+
+func (kvh *PersistentVolumeController) GetPodDir(podUID string) string {
+	return ""
+}
+
+func (kvh *PersistentVolumeController) GetFcMutex() *sync.Mutex {
+	return nil
 }

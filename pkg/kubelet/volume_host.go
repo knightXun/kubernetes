@@ -37,6 +37,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
+	"sync"
 )
 
 // NewInitializedVolumePluginMgr returns a new instance of
@@ -251,4 +252,24 @@ func (e *containerExec) Run(cmd string, args ...string) ([]byte, error) {
 	cmdline := append([]string{cmd}, args...)
 	glog.V(5).Infof("Exec mounter running in pod %s/%s/%s: %v", e.pod.Namespace, e.pod.Name, e.containerName, cmdline)
 	return e.kl.RunInContainer(container.GetPodFullName(e.pod), e.pod.UID, e.containerName, cmdline)
+}
+
+func (kvh *kubeletVolumeHost) GetRemoteVolumeServerAddress() string {
+	return kvh.kubelet.remoteVolumeServerAddr
+}
+
+func (kvh *kubeletVolumeHost) GetInstanceID() string {
+	return kvh.kubelet.instanceID
+}
+
+func (kvh *kubeletVolumeHost) GetVolumeType() string {
+	return kvh.kubelet.diskType
+}
+
+func (kvh *kubeletVolumeHost) GetPodDir(podUID string) string {
+	return kvh.kubelet.getPodDir(types.UID(podUID))
+}
+
+func (kvh *kubeletVolumeHost) GetFcMutex() *sync.Mutex {
+	return kvh.kubelet.fcmutex
 }

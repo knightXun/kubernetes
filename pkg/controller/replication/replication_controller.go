@@ -53,6 +53,7 @@ func NewReplicationManager(podInformer coreinformers.PodInformer, rcInformer cor
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(kubeClient.CoreV1().RESTClient()).Events("")})
+	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "replication-controller"})
 	return &ReplicationManager{
 		*replicaset.NewBaseController(informerAdapter{rcInformer}, podInformer, clientsetAdapter{kubeClient}, burstReplicas,
 			v1.SchemeGroupVersion.WithKind("ReplicationController"),
@@ -62,6 +63,7 @@ func NewReplicationManager(podInformer coreinformers.PodInformer, rcInformer cor
 				KubeClient: kubeClient,
 				Recorder:   eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "replication-controller"}),
 			}},
+			recorder,
 		),
 	}
 }

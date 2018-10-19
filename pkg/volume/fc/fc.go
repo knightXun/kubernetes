@@ -33,6 +33,11 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
+	"path/filepath"
+	"bufio"
+	"io"
+	"time"
+	"os/exec"
 )
 
 // This is the primary entrypoint for volume plugins.
@@ -426,7 +431,163 @@ func (c *fcDiskUnmounter) TearDown() error {
 }
 
 func (c *fcDiskUnmounter) TearDownAt(dir string) error {
-	return util.UnmountPath(dir, c.mounter)
+	glog.Infoln("begin uninstall dellfc volume: " + dir)
+	c.plugin.host.GetFcMutex().Lock()
+	defer c.plugin.host.GetFcMutex().Lock()
+
+	volumeID, err := ReadVolumeIDFromPluginsDir(c.GetVolumeIDFilePath())
+	if err != nil {
+		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes", "kubernetes.io~fc","dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"volumes","kubernetes.io~fc", "dellvolumeinfo"), err)
+	}
+
+	wwns, lun, err := ReadWwnsAndLunFromPluginsDir(c.GetVolumeIDFilePath())
+	if err != nil {
+		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"volumes", "kubernetes.io~fc","dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes","kubernetes.io~fc","dellvolumeinfo"), err)
+	}
+
+	if wwns == "" || lun == "" {
+		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes","kubernetes.io~fc", "dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes", "kubernetes.io~fc", "dellvolumeinfo"), err)
+	}
+
+	glog.V(1).Infof("Wwns=%v, Lun=%v , volomeID=%v  dir=%v ", wwns, lun, volumeID, dir)
+
+	dmName := getDMDiskName(strings.Split(wwns, ","), lun, c.io)
+
+	err = util.UnmountPath(dir, c.mounter)
+
+	if err != nil {
+		glog.Errorf("RemoveDellVolume_Fail Wwns=%v, Lun=%v , volomeID=%v error=%v", wwns, lun, volumeID, err)
+		return err
+	}
+
+	for true {
+		// bash /usr/bin/clean_removal.sh wwns lun
+		out, err := exec.Command("/bin/bash", "-c", "/usr/bin/clean_removal.sh "+wwns+" "+lun+" "+volumeID).CombinedOutput()
+		if err != nil {
+			glog.Errorf("clean_fc device failed, meet error: %v , info: %v", err, string(out))
+			glog.Errorf("clean_fc device failed, volumeID=%v, wwns=%v, lun=%v", volumeID, wwns, lun)
+			glog.Errorf("clean_fc device failed, meet error: %v , info: %v", err, string(out))
+		}
+		if getDMSlaves(dmName, c.io) != 0 {
+			time.Sleep( 2 * time.Second )
+		} else {
+			break
+		}
+	}
+
+	if volumeID != "" {
+		err := Unlock(c.plugin.host.GetRemoteVolumeServerAddress(), volumeID, string(c.podUID), c.plugin.host.GetInstanceID())
+		if err != nil {
+			glog.Errorf("unlock/unmap volume failed: %v", err)
+			return err
+		}
+	}
+	glog.V(1).Infof("RemoveDellVolume_Success Wwns=%v, Lun=%v , volomeID=%v", wwns, lun, volumeID)
+	RemoveVolumeInfoFile(c.GetVolumeIDFilePath())
+	return err
+}
+
+func RemoveVolumeInfoFile(path string) {
+	os.Remove(filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo"))
+}
+
+func ReadWwnsAndLunFromPluginsDir(path string) (wwns, lun string, err error) {
+	volumepath := filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	f, err := os.Open(volumepath)
+	if err != nil {
+		return wwns, lun, err
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+
+	for {
+		line, err := reader.ReadString('\n')
+		glog.Infof("dellfc line: %v", line)
+		if line != "" {
+			line = strings.TrimRight(line, "\n")
+		}
+		if err != nil {
+			if err != io.EOF {
+				sep := strings.Split(line, "=")
+				line = strings.TrimSuffix(line, "\n")
+				if len(sep) == 2 {
+					if sep[0] == "wwns" && wwns == "" {
+						wwns = sep[1]
+					}
+					if sep[0] == "lun" && lun == "" {
+						lun = sep[1]
+					}
+				}
+				break
+			}
+		}
+		sep := strings.Split(line, "=")
+		if len(sep) == 2 {
+			if sep[0] == "wwns" && wwns == "" {
+				wwns = sep[1]
+			}
+			if sep[0] == "lun" && lun == "" {
+				lun = sep[1]
+			}
+		}
+		if wwns != "" && lun != "" {
+			break
+		}
+	}
+
+	if lun == "" || wwns == "" {
+		err = fmt.Errorf(path + " has bad format, can't parse wwns or lun")
+		return wwns, lun, err
+	} else {
+		return wwns, lun, nil
+	}
+}
+
+func ReadVolumeIDFromPluginsDir(path string) (string, error) {
+	volumepath := filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	f, err := os.Open(volumepath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+
+	for {
+		volumeID, err := reader.ReadString('\n')
+		if volumeID != "" {
+			volumeID = strings.TrimRight(volumeID, "\n")
+		}
+		if err != nil {
+			if err != io.EOF {
+				sep := strings.Split(volumeID, "=")
+				volumeID = strings.TrimSuffix(volumeID, "\n")
+				if len(sep) == 2 {
+					if sep[0] == "volName" {
+						return sep[1], nil
+					}
+				}
+
+			}
+		}
+		sep := strings.Split(volumeID, "=")
+		if len(sep) == 2 {
+			if sep[0] == "volName" {
+				return sep[1], nil
+			}
+		}
+
+	}
+
+	return "", fmt.Errorf("Not Found")
+}
+
+func (fc *fcDisk) GetVolumeIDFilePath() string {
+	return fc.plugin.host.GetPodDir(string(fc.podUID))
 }
 
 // Block Volumes Support
