@@ -49,6 +49,7 @@ import (
 	taintutils "k8s.io/kubernetes/pkg/util/taints"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/util/iputils"
 	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
@@ -90,6 +91,13 @@ var UpdateTaintBackoff = wait.Backoff{
 var (
 	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 )
+
+// IpUtils for applying/releasing IP for macvlan
+var ipUtil iputils.IpUtils
+
+func SetIPURL(url, location string) {
+	ipUtil = iputils.NewIPUtils(url, location)
+}
 
 type ResyncPeriodFunc func() time.Duration
 
@@ -565,11 +573,28 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 	if len(nodeName) != 0 {
 		pod.Spec.NodeName = nodeName
 	}
+
+	var ip string
+	var getIPErr error
+	if ipUtil != nil {
+		// Get macvlan IP for grouped pod.
+		ip, _, getIPErr = ipUtil.AddIPMaskIfPodLabeled(pod, namespace)
+		if getIPErr != nil {
+			glog.Errorf("Failed to add ip and mask for pod %v: %v", pod.Name, err)
+		}
+	}
+
 	if labels.Set(pod.Labels).AsSelectorPreValidated().Empty() {
 		return fmt.Errorf("unable to create pods, no labels")
 	}
 	if newPod, err := r.KubeClient.CoreV1().Pods(namespace).Create(pod); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
+		// Release IP for grouped pod.
+		if ip != "" {
+			releaseErr := ipUtil.ReleaseGroupedIP(pod.Namespace, pod.Labels[iputils.GroupedLabel], ip)
+			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
+		}
+
 		return err
 	} else {
 		switch controllerRef.Kind {
@@ -585,6 +610,12 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		}
 		glog.V(4).Infof("Controller %v created pod %v", accessor.GetName(), newPod.Name)
 		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
+
+		// Send events if we did not get IP successfully while creating Pods successfully.
+		if getIPErr != nil {
+			r.Recorder.Event(newPod, v1.EventTypeWarning, "FailedGetIP", getIPErr.Error())
+		}
+
 	}
 	return nil
 }
@@ -601,6 +632,12 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
+		if ipUtil != nil {
+			err := ipUtil.ReleaseIPForPod(pod)
+			if err != nil {
+				glog.Errorf("Failed to delete %v's IP: %v", pod.Name, err)
+			}
+		}
 		if pod != nil && len(pod.OwnerReferences) > 0 {
 			switch pod.OwnerReferences[0].Kind {
 			case "ReplicationController":
