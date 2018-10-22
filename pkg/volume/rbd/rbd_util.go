@@ -39,7 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	fileutil "k8s.io/kubernetes/pkg/util/file"
 	"k8s.io/kubernetes/pkg/util/mount"
-	"k8s.io/kubernetes/pkg/util/node"
 	"k8s.io/kubernetes/pkg/volume"
 	volutil "k8s.io/kubernetes/pkg/volume/util"
 )
@@ -318,7 +317,7 @@ func (util *RBDUtil) rbdUnlock(b rbdMounter) error {
 	}
 
 	// Construct lock id using host name and a magic prefix.
-	lock_id := kubeLockMagic + node.GetHostname("")
+	lock_id := kubeLockMagic + string(b.podUID)
 
 	mon := util.kernelRBDMonitorsOpt(b.Mon)
 
