@@ -417,6 +417,11 @@ func StartControllers(ctx ControllerContext, startSATokenController InitFunc, co
 		return err
 	}
 
+	err := controller.SetIPURL(ctx.ComponentConfig.IPAllocatorURL, ctx.ComponentConfig.IPLocation)
+	if err != nil {
+		return err
+	}
+
 	// Initialize the cloud provider with a reference to the clientBuilder only after token controller
 	// has started in case the cloud provider uses the client builder.
 	if ctx.Cloud != nil {

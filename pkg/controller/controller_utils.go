@@ -95,8 +95,11 @@ var (
 // IpUtils for applying/releasing IP for macvlan
 var ipUtil iputils.IpUtils
 
-func SetIPURL(url, location string) {
-	ipUtil = iputils.NewIPUtils(url, location)
+func SetIPURL(url, location string) error {
+	if url != "" && location != "" {
+		ipUtil = iputils.NewIPUtils(url, location)
+	}
+	return nil
 }
 
 type ResyncPeriodFunc func() time.Duration
@@ -1094,4 +1097,12 @@ func ComputeHash(template *v1.PodTemplateSpec, collisionCount *int32) uint32 {
 	}
 
 	return podTemplateSpecHasher.Sum32()
+}
+
+func AddIPMaskAnnotation(pod *v1.Pod, namespace string) (ip string, mask int, err error) {
+	return ipUtil.AddIPMaskIfPodLabeled(pod, namespace)
+}
+
+func ReleaseIP(pod *v1.Pod, ip string) error {
+	return ipUtil.ReleaseGroupedIP(pod.Namespace, pod.Labels[iputils.GroupedLabel], ip)
 }

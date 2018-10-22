@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/golang/glog"
 	apps "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
@@ -77,8 +79,19 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 		spc.recordPodEvent("create", set, pod, err)
 		return err
 	}
+
+	ip, _, getIPErr := controller.AddIPMaskAnnotation(pod, pod.Namespace)
+	if getIPErr != nil {
+		glog.Errorf("Error add IP for statefulset %v: %v", set.Name, getIPErr)
+	}
+
 	// If we created the PVCs attempt to create the Pod
 	newPod, err := spc.client.CoreV1().Pods(set.Namespace).Create(pod)
+	if err != nil && ip != "" {
+		releaseErr := controller.ReleaseIP(pod, ip)
+		glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
+	}
+
 	// sink already exists errors
 	if apierrors.IsAlreadyExists(err) {
 		return err
@@ -87,6 +100,11 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	podchange.RecordPodEvent(spc.recorder, newPod, "StatefulSetUpdate", "StatefulSetPodAdd")
 
 	spc.recordPodEvent("create", set, pod, err)
+
+	// Send events if we did not get IP successfully while creating Pods successfully.
+	if getIPErr != nil {
+		spc.recorder.Event(newPod, v1.EventTypeWarning, "FailedGetIP", getIPErr.Error())
+	}
 	return err
 }
 
