@@ -1098,3 +1098,11 @@ func ComputeHash(template *v1.PodTemplateSpec, collisionCount *int32) uint32 {
 
 	return podTemplateSpecHasher.Sum32()
 }
+
+func AddIPMaskAnnotation(pod *v1.Pod, namespace string) (ip string, mask int, err error) {
+	return ipUtil.AddIPMaskIfPodLabeled(pod, namespace)
+}
+
+func ReleaseIP(pod *v1.Pod, ip string) error {
+	return ipUtil.ReleaseGroupedIP(pod.Namespace, pod.Labels[iputils.GroupedLabel], ip)
+}

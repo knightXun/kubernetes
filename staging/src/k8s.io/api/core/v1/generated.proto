@@ -1215,6 +1215,8 @@ message FCVolumeSource {
   // Either wwids or combination of targetWWNs and lun must be set, but not both simultaneously.
   // +optional
   repeated string wwids = 5;
+
+  optional string remoteVolumeID = 6;
 }
 
 // FlexPersistentVolumeSource represents a generic persistent volume resource that is

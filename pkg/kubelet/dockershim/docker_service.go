@@ -43,6 +43,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/dockershim/libdocker"
 	"k8s.io/kubernetes/pkg/kubelet/dockershim/metrics"
+	"k8s.io/kubernetes/pkg/kubelet/network/macvlan"
 )
 
 const (
@@ -230,7 +231,7 @@ func NewDockerService(config *ClientConfig, podSandboxImage string, streamingCon
 	}
 	// dockershim currently only supports CNI plugins.
 	cniPlugins := cni.ProbeNetworkPlugins(pluginSettings.PluginConfDir, pluginSettings.PluginBinDir)
-	cniPlugins = append(cniPlugins, kubenet.NewPlugin(pluginSettings.PluginBinDir))
+	cniPlugins = append(cniPlugins, kubenet.NewPlugin(pluginSettings.PluginBinDir), macvlan.NewPlugin(pluginSettings.PluginConfDir, c))
 	netHost := &dockerNetworkHost{
 		pluginSettings.LegacyRuntimeHost,
 		&namespaceGetter{ds},
