@@ -76,6 +76,11 @@ That said, if you have questions, reach out to us
 7. kubelet提供rbd 卷resize接口
 8. 释放IP失败时发送 warning 消息
 
+
+## 注意事项
+1. 改动代码尽量以插件形式，复用原有代码，尽量少自己定义新的字段。
+2. 从v1.6.7 升级 v1.10.7 时，由于v1.6.7 冰利在 Pod status 定义了新的字段用于缩容，而v1.10.7 也在pod status中加了字段，两者的protobuf的序列号一致，但是类型不一致，所以会冲突。解决方法：在`staging/src/k8s.io/api/core/v1/generated.pb.go`中转换类型。见`3c5c61508f120a72ea6c38ed1ed2e343dce20975`
+
 [announcement]: https://cncf.io/news/announcement/2015/07/new-cloud-native-computing-foundation-drive-alignment-among-container
 [Borg]: https://research.google.com/pubs/pub43438.html
 [CNCF]: https://www.cncf.io/about
