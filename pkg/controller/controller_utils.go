@@ -95,8 +95,11 @@ var (
 // IpUtils for applying/releasing IP for macvlan
 var ipUtil iputils.IpUtils
 
-func SetIPURL(url, location string) {
-	ipUtil = iputils.NewIPUtils(url, location)
+func SetIPURL(url, location string) error {
+	if url != "" && location != "" {
+		ipUtil = iputils.NewIPUtils(url, location)
+	}
+	return nil
 }
 
 type ResyncPeriodFunc func() time.Duration
