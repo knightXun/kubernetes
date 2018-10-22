@@ -261,6 +261,10 @@ func Convert_v1beta1_KubeletConfiguration_To_kubeletconfig_KubeletConfiguration(
 	return autoConvert_v1beta1_KubeletConfiguration_To_kubeletconfig_KubeletConfiguration(in, out, s)
 }
 
+func Convert_kubeletconfig_KubeletConfiguration_To_v1beta1_KubeletConfiguration(in *kubeletconfig.KubeletConfiguration, out *KubeletConfiguration, s conversion.Scope) error {
+	return autoConvert_kubeletconfig_KubeletConfiguration_To_v1beta1_KubeletConfiguration(in, out, s)
+}
+
 func autoConvert_kubeletconfig_KubeletConfiguration_To_v1beta1_KubeletConfiguration(in *kubeletconfig.KubeletConfiguration, out *KubeletConfiguration, s conversion.Scope) error {
 	out.StaticPodPath = in.StaticPodPath
 	out.SyncFrequency = in.SyncFrequency
