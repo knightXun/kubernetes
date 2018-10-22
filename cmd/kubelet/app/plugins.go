@@ -62,6 +62,7 @@ import (
 	// features check
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/features"
+	"k8s.io/kubernetes/pkg/kubelet/network/macvlan"
 )
 
 // ProbeVolumePlugins collects all volume plugins into an easy to use list.
@@ -119,6 +120,7 @@ func ProbeNetworkPlugins(cniConfDir, cniBinDir string) []network.NetworkPlugin {
 
 	// for each existing plugin, add to the list
 	allPlugins = append(allPlugins, cni.ProbeNetworkPlugins(cniConfDir, cniBinDir)...)
+	allPlugins = append(allPlugins, macvlan.NewPlugin(cniConfDir, nil))
 	allPlugins = append(allPlugins, kubenet.NewPlugin(cniBinDir))
 
 	return allPlugins
