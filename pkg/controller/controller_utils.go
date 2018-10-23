@@ -48,6 +48,7 @@ import (
 	hashutil "k8s.io/kubernetes/pkg/util/hash"
 	taintutils "k8s.io/kubernetes/pkg/util/taints"
 
+	"errors"
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/util/iputils"
 	"k8s.io/kubernetes/pkg/util/podchange"
@@ -1100,9 +1101,19 @@ func ComputeHash(template *v1.PodTemplateSpec, collisionCount *int32) uint32 {
 }
 
 func AddIPMaskAnnotation(pod *v1.Pod, namespace string) (ip string, mask int, err error) {
-	return ipUtil.AddIPMaskIfPodLabeled(pod, namespace)
+	if ipUtil != nil {
+		return ipUtil.AddIPMaskIfPodLabeled(pod, namespace)
+	} else {
+		glog.Errorf("ipUtil is nil!")
+		return "", 0, errors.New("ipUtil is nil!")
+	}
+
 }
 
-func ReleaseIP(pod *v1.Pod, ip string) error {
-	return ipUtil.ReleaseGroupedIP(pod.Namespace, pod.Labels[iputils.GroupedLabel], ip)
+func ReleaseIPForPod(pod *v1.Pod) error {
+	if ipUtil == nil {
+		glog.Errorf("ipUtil is nil!")
+		return errors.New("ipUtil is nil!")
+	}
+	return ipUtil.ReleaseIPForPod(pod)
 }

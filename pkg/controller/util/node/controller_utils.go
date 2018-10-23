@@ -98,6 +98,12 @@ func DeletePods(kubeClient clientset.Interface, recorder record.EventRecorder, n
 		if err := kubeClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, nil); err != nil {
 			return false, err
 		}
+		// Release IP for macvlan.
+		deleteIpErr := controller.ReleaseIPForPod(&pod)
+		if deleteIpErr != nil {
+			glog.Errorf("Failed to release %v's IP in forcefullyDeletePod: %v", pod.Name, deleteIpErr)
+		}
+
 		if len(pod.OwnerReferences) > 0 {
 			switch pod.OwnerReferences[0].Kind {
 			case "ReplicationController":

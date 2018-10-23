@@ -88,7 +88,7 @@ func (spc *realStatefulPodControl) CreateStatefulPod(set *apps.StatefulSet, pod 
 	// If we created the PVCs attempt to create the Pod
 	newPod, err := spc.client.CoreV1().Pods(set.Namespace).Create(pod)
 	if err != nil && ip != "" {
-		releaseErr := controller.ReleaseIP(pod, ip)
+		releaseErr := controller.ReleaseIPForPod(pod)
 		glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
 	}
 
@@ -158,6 +158,13 @@ func (spc *realStatefulPodControl) UpdateStatefulPod(set *apps.StatefulSet, pod 
 func (spc *realStatefulPodControl) DeleteStatefulPod(set *apps.StatefulSet, pod *v1.Pod) error {
 	err := spc.client.CoreV1().Pods(set.Namespace).Delete(pod.Name, nil)
 	spc.recordPodEvent("delete", set, pod, err)
+	if err == nil {
+		deleteIpErr := controller.ReleaseIPForPod(pod)
+		if deleteIpErr != nil {
+			glog.Errorf("Failed to release %v's IP in DeleteStatefulPod: %v", pod.Name, deleteIpErr)
+		}
+	}
+
 	// Send events for servicemanager.
 	podchange.RecordPodEvent(spc.recorder, pod, "StatefulSetUpdate", "StatefulSetPodDelete")
 	return err
