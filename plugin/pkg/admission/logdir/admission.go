@@ -50,19 +50,22 @@ type logDir struct {
 
 func addLogVolumesIfNeeded(pod *api.Pod, namespace string) bool {
 	flag := false
-	if len(pod.Annotations) <= 1 {
+	if len(pod.Annotations) == 0 {
 		return flag
-	}
-	if pod.Name == "" {
-		pod.Name = names.SimpleNameGenerator.GenerateName(pod.GenerateName)
 	}
 	for key, mountPath := range pod.Annotations {
 		// Annotations like:
 		// logDir.container1.javalog: /var/log/java
 		// logDir.container2.systemd: /mnt/log/systemd
 		if strings.HasPrefix(key, logDirAnnotation) {
+			glog.V(6).Infof("Pod %v/%v has logDir", pod.Name, pod.GenerateName)
 			strs := strings.Split(key, ".")
 			if len(strs) == 3 {
+				// We have to know pod name in advance.
+				if !flag && len(pod.OwnerReferences) > 0 && pod.OwnerReferences[0].Kind != "StatefulSet" {
+					// Generate Pod name now because we need it as metadata for logdir path.
+					pod.Name = names.SimpleNameGenerator.GenerateName(pod.GenerateName)
+				}
 				flag = true
 				containerName := strs[1]
 				fileTag := strs[2]
