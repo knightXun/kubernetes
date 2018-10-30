@@ -432,6 +432,8 @@ type KubeletConfiguration struct {
 	// Default: ["pods"]
 	// +optional
 	EnforceNodeAllocatable []string `json:"enforceNodeAllocatable,omitempty"`
+
+	RemoteVolumeServerAddr string  `json:"remoteVolumeServerAddr,omitempty"`
 }
 
 type KubeletAuthorizationMode string
