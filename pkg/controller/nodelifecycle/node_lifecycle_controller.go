@@ -201,6 +201,10 @@ type Controller struct {
 	// if set to true, NodeController will taint Nodes based on its condition for 'NetworkUnavailable',
 	// 'MemoryPressure', 'OutOfDisk' and 'DiskPressure'.
 	taintNodeByCondition bool
+
+	// Only nodes with this label can be evicted pods when timeout.
+	// Default value: canEvictPods
+	canEvictPodsLabel string
 }
 
 // NewNodeLifecycleController returns a new taint controller.
@@ -219,7 +223,8 @@ func NewNodeLifecycleController(podInformer coreinformers.PodInformer,
 	unhealthyZoneThreshold float32,
 	runTaintManager bool,
 	useTaintBasedEvictions bool,
-	taintNodeByCondition bool) (*Controller, error) {
+	taintNodeByCondition bool,
+	canEvictPodsLabel string) (*Controller, error) {
 
 	if kubeClient == nil {
 		glog.Fatalf("kubeClient is nil when starting Controller")
@@ -256,6 +261,7 @@ func NewNodeLifecycleController(podInformer coreinformers.PodInformer,
 		runTaintManager:             runTaintManager,
 		useTaintBasedEvictions:      useTaintBasedEvictions && runTaintManager,
 		taintNodeByCondition:        taintNodeByCondition,
+		canEvictPodsLabel:           canEvictPodsLabel,
 	}
 	if useTaintBasedEvictions {
 		glog.Infof("Controller is using taint based evictions.")
@@ -513,6 +519,13 @@ func (nc *Controller) doEvictionPass() {
 		// Function should return 'false' and a time after which it should be retried, or 'true' if it shouldn't (it succeeded).
 		nc.zonePodEvictor[k].Try(func(value scheduler.TimedValue) (bool, time.Duration) {
 			node, err := nc.nodeLister.Get(value.Value)
+			if node.Labels[nc.canEvictPodsLabel] != "true" {
+				glog.V(2).Infof("Node %v is NotReady. Its canEvictPodsLabel: %v is not true. MarkAllPodsNotReady.", node.Name, nc.canEvictPodsLabel)
+				if err = nodeutil.MarkAllPodsNotReady(nc.kubeClient, node); err != nil {
+					utilruntime.HandleError(fmt.Errorf("Unable to mark all pods NotReady on node %v: %v", node.Name, err))
+				}
+				return false, nc.podEvictionTimeout
+			}
 			if apierrors.IsNotFound(err) {
 				glog.Warningf("Node %v no longer present in nodeLister!", value.Value)
 			} else if err != nil {

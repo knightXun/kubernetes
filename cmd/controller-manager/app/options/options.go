@@ -177,6 +177,7 @@ func (o *GenericControllerManagerOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&o.ComponentConfig.ControllerStartInterval.Duration, "controller-start-interval", o.ComponentConfig.ControllerStartInterval.Duration, "Interval between starting controller managers.")
 	fs.StringVar(&o.ComponentConfig.IPAllocatorURL, "ip-allocator-url", o.ComponentConfig.IPAllocatorURL, "Address where controllers require/release IPs. Like http://localhost:8090")
 	fs.StringVar(&o.ComponentConfig.IPLocation, "ip-location", o.ComponentConfig.IPLocation, "Location of macvlan ip")
+	fs.StringVar(&o.ComponentConfig.CanEvictPodsLabel, "evict-pods-label", "canEvictPods", "Location of macvlan ip")
 
 	o.SecureServing.AddFlags(fs)
 	o.InsecureServing.AddFlags(fs)

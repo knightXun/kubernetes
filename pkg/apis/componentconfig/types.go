@@ -365,6 +365,8 @@ type KubeControllerManagerConfiguration struct {
 	IPAllocatorURL string
 	// Default location for Macvlan IP
 	IPLocation string
+	// Only nodes with this label can be evicted pods when timeout.
+	CanEvictPodsLabel string
 }
 
 // VolumeConfiguration contains *all* enumerated flags meant to configure all volume

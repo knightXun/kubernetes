@@ -133,6 +133,7 @@ func newNodeLifecycleControllerFromClient(
 		useTaints,
 		useTaints,
 		useTaints,
+		"canEvictPods",
 	)
 	if err != nil {
 		return nil, err

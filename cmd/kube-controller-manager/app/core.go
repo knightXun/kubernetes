@@ -136,6 +136,7 @@ func startNodeLifecycleController(ctx ControllerContext) (bool, error) {
 		ctx.ComponentConfig.EnableTaintManager,
 		utilfeature.DefaultFeatureGate.Enabled(features.TaintBasedEvictions),
 		utilfeature.DefaultFeatureGate.Enabled(features.TaintNodesByCondition),
+		ctx.ComponentConfig.CanEvictPodsLabel,
 	)
 	if err != nil {
 		return true, err
