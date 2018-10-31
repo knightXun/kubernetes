@@ -94,12 +94,13 @@ func diskSetUp(manager diskManager, b rbdMounter, volPath string, mounter mount.
 		return err
 	} else {
 		if b.fsType == "ext4" || b.fsType == "" { //默认为ext4
-			output, err := exec.Command("resize2fs", globalPDPath).Output()
+			output, err := exec.Command("/usr/local/bin/sync2fs.sh", "rbd", b.Image).Output()
 			if err != nil {
-				glog.V(6).Infof("resize2fs %v: %v/%v", b.Image, string(output), err)
+				glog.V(6).Infof("resize2fs %v: result: %v. err: %v", b.Image, string(output), err)
 				return err
 			}
 		}
+
 	}
 	glog.V(3).Infof("rbd: successfully bind mount %s to %s with options %v", globalPDPath, volPath, mountOptions)
 
