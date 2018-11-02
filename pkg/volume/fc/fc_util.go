@@ -31,6 +31,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
+	"os/exec"
 )
 
 type ioHandler interface {
@@ -133,6 +134,7 @@ func scsiHostRescan(io ioHandler) {
 
 // make a directory like /var/lib/kubelet/plugins/kubernetes.io/fc/target-lun-0
 func makePDNameInternal(host volume.VolumeHost, wwns []string, lun string, wwids []string) string {
+	glog.Info("get wwns and lun", wwns, lun)
 	if len(wwns) != 0 {
 		return path.Join(host.GetPluginDir(fcPluginName), wwns[0]+"-lun-"+lun)
 	} else {
@@ -245,6 +247,14 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) (string, error) {
 	err = b.mounter.FormatAndMount(devicePath, globalPDPath, b.fsType, nil)
 	if err != nil {
 		return devicePath, fmt.Errorf("fc: failed to mount fc volume %s [%s] to %s, error %v", devicePath, b.fsType, globalPDPath, err)
+	}
+
+	if b.fsType == "ext4" || b.fsType == "" {
+		output, err := exec.Command("resize2fs", devicePath).Output()
+		glog.V(6).Infof("resize2fs %v: %v/%v", devicePath, string(output), err)
+		if err != nil {
+			return devicePath, err
+		}
 	}
 
 	return devicePath, err
