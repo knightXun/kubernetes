@@ -24,7 +24,6 @@ import (
 	"k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/pkg/volume"
 	"strings"
-	"os/exec"
 )
 
 // Abstract interface to disk operations.
@@ -87,14 +86,6 @@ func diskSetUp(manager diskManager, b fcDiskMounter, volPath string, mounter mou
 		os.Remove(volPath)
 
 		return err
-	} else {
-		if b.fsType == "ext4" || b.fsType == "" {
-			output, err := exec.Command("resize2fs", globalPDPath).Output()
-			glog.V(6).Infof("resize2fs %v: %v/%v", globalPDPath, string(output), err)
-			if err != nil {
-				return err
-			}
-		}
 	}
 
 	if !b.readOnly {
@@ -124,7 +115,7 @@ func getDMSlaves(dm string, io ioHandler) int {
 		glog.V(1).Infof("RemoveDellVolume_Fail GetDMSlaves error: ", err.Error())
 		return 0
 	} else {
-		glog.V(1).Infof("RemoveDellVolume_Fail GetDMSlaves Numbers: ", string(len(slaves)))
+		glog.V(1).Infof("RemoveDellVolume GetDMSlaves Numbers: ", len(slaves))
 		return len(slaves)
 	}
 }

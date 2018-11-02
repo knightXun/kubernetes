@@ -72,18 +72,23 @@ func (attacher *fcAttacher) VolumesAreAttached(specs []*volume.Spec, nodeName ty
 func (attacher *fcAttacher) WaitForAttach(spec *volume.Spec, devicePath string, pod *v1.Pod, timeout time.Duration) (string, error) {
 	attacher.host.GetFcMutex().Lock()
 	defer attacher.host.GetFcMutex().Unlock()
-	if spec.Volume.FC.RemoteVolumeID == "" {
+
+	volumeSource, _, err := getVolumeSource(spec)
+	RemoteVolumeID := volumeSource.RemoteVolumeID
+
+	if RemoteVolumeID == "" {
 		return "", fmt.Errorf("Empty FC.RemoteVolumeID")
 	}
 
-	lun, wwns, _, err := Lock(attacher.host.GetRemoteVolumeServerAddress(), spec.Volume.FC.RemoteVolumeID, attacher.host.GetInstanceID(), string(pod.UID))
+	glog.V(1).Info("Attach fc :" + RemoteVolumeID)
+	lun, wwns, _, err := Lock(attacher.host.GetRemoteVolumeServerAddress(), RemoteVolumeID, attacher.host.GetInstanceID(), string(pod.UID))
 	if err != nil {
 		glog.Errorf("fc: failed to setup: %v", err)
-		glog.Errorf("diskSetUp_failed, so we must unlock volume:%v", spec.Volume.FC.RemoteVolumeID)
+		glog.Errorf("diskSetUp_failed, so we must unlock volume:%v", RemoteVolumeID)
 		if err.Error() != "no fc disk found" || err.Error() != "Is Likely Not Mount Point" {
-			glog.Errorf("diskSetUp_failed, clean %v", spec.Volume.FC.RemoteVolumeID)
-			if lun != "" && len(wwns) != 0 && spec.Volume.FC.RemoteVolumeID != "" {
-				volumeID := spec.Volume.FC.RemoteVolumeID
+			glog.Errorf("diskSetUp_failed, clean %v", RemoteVolumeID)
+			if lun != "" && len(wwns) != 0 && RemoteVolumeID != "" {
+				volumeID := RemoteVolumeID
 				wwnsstr := strings.Join(wwns, ",")
 				lun := lun
 				glog.V(1).Infoln("RemoteDellVolume_Clean after disksetup failed")
@@ -95,7 +100,7 @@ func (attacher *fcAttacher) WaitForAttach(spec *volume.Spec, devicePath string, 
 					//err = fmt.Errorf("clean fc device failed, meet error: %v , info: %v", err, string(out))
 					//return err
 				}
-				err1 := UnlockWhenSetupFailed(attacher.host.GetRemoteVolumeServerAddress(), spec.Volume.FC.RemoteVolumeID, attacher.host.GetInstanceID(), string(pod.UID))
+				err1 := UnlockWhenSetupFailed(attacher.host.GetRemoteVolumeServerAddress(), RemoteVolumeID, attacher.host.GetInstanceID(), string(pod.UID))
 				if err1 != nil {
 					glog.Errorf("After failure of diskSetUp(%v), So we unlock this volume, but failed: %v", volumeID, err1)
 					err = fmt.Errorf(err.Error() + "   " + err1.Error())
@@ -110,9 +115,20 @@ func (attacher *fcAttacher) WaitForAttach(spec *volume.Spec, devicePath string, 
 		return "", err
 	}
 
-	WriteVolumeInfoInPluginDir(attacher.host.GetPodDir(string(pod.UID)), spec.Name(), spec.Volume.FC.RemoteVolumeID, lun, wwns)
+	WriteVolumeInfoInPluginDir(attacher.host.GetPodDir(string(pod.UID)), spec.Name(), RemoteVolumeID, lun, wwns)
 
 	mounter, err := volumeSpecToMounter(spec, attacher.host)
+	mounter.wwns = wwns
+	mounter.lun = lun
+	lunInt, _ := strconv.Atoi(lun)
+	if spec.PersistentVolume.Spec.FC != nil {
+		*spec.PersistentVolume.Spec.FC.Lun = int32(lunInt)
+		spec.PersistentVolume.Spec.FC.TargetWWNs = wwns
+	} else if spec.Volume.FC != nil {
+		*spec.Volume.FC.Lun = int32(lunInt)
+		spec.Volume.FC.TargetWWNs = wwns
+	}
+
 	if err != nil {
 		glog.Warningf("failed to get fc mounter: %v", err)
 		return "", err
@@ -291,7 +307,8 @@ func UnlockWhenSetupFailed(remoteVolumeServerAddress, volumeID, instanceID, podI
 
 func WriteVolumeInfoInPluginDir(rootpath, volName, volumeID, lun string, wwns []string) error {
 	//rootpath := fc.GetVolumeIDFilePath()
-	volumepath := filepath.Join(rootpath, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	//volumepath := filepath.Join(rootpath, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	volumepath := filepath.Join(rootpath, "dellvolumeinfo")
 	glog.V(1).Infof("Write VolumeID: %v To %v", volName, volumepath)
 
 	os.Remove(volumepath)

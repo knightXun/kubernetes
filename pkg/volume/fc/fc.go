@@ -75,15 +75,16 @@ func (plugin *fcPlugin) GetVolumeName(spec *volume.Spec) (string, error) {
 	// API server validates these parameters beforehand but attach/detach
 	// controller creates volumespec without validation. They may be nil
 	// or zero length. We should check again to avoid unexpected conditions.
-	if len(volumeSource.TargetWWNs) != 0 && volumeSource.Lun != nil {
-		// TargetWWNs are the FibreChannel target worldwide names
-		return fmt.Sprintf("%v:%v", volumeSource.TargetWWNs, *volumeSource.Lun), nil
-	} else if len(volumeSource.WWIDs) != 0 {
-		// WWIDs are the FibreChannel World Wide Identifiers
-		return fmt.Sprintf("%v", volumeSource.WWIDs), nil
-	}
 
-	return "", err
+	//if len(volumeSource.TargetWWNs) != 0 && volumeSource.Lun != nil {
+	//	// TargetWWNs are the FibreChannel target worldwide names
+	//	return fmt.Sprintf("%v:%v", volumeSource.TargetWWNs, *volumeSource.Lun), nil
+	//} else if len(volumeSource.WWIDs) != 0 {
+	//	// WWIDs are the FibreChannel World Wide Identifiers
+	//	return fmt.Sprintf("%v", volumeSource.WWIDs), nil
+	//}
+
+	return volumeSource.RemoteVolumeID, nil
 }
 
 func (plugin *fcPlugin) CanSupport(spec *volume.Spec) bool {
@@ -110,6 +111,7 @@ func (plugin *fcPlugin) GetAccessModes() []v1.PersistentVolumeAccessMode {
 }
 
 func (plugin *fcPlugin) NewMounter(spec *volume.Spec, pod *v1.Pod, _ volume.VolumeOptions) (volume.Mounter, error) {
+	glog.V(1).Infof("create a newMounter for fc")
 	// Inject real implementations here, test through the internal function.
 	return plugin.newMounterInternal(spec, pod.UID, &FCUtil{}, plugin.host.GetMounter(plugin.GetPluginName()), plugin.host.GetExec(plugin.GetPluginName()))
 }
@@ -122,20 +124,15 @@ func (plugin *fcPlugin) newMounterInternal(spec *volume.Spec, podUID types.UID, 
 		return nil, err
 	}
 
-	wwns, lun, wwids, err := getWwnsLunWwids(fc)
-	if err != nil {
-		return nil, fmt.Errorf("fc: no fc disk information found. failed to make a new mounter")
-	}
 	fcDisk := &fcDisk{
 		podUID:  podUID,
 		volName: spec.Name(),
-		wwns:    wwns,
-		lun:     lun,
-		wwids:   wwids,
+		RemoteVolumeID: fc.RemoteVolumeID,
 		manager: manager,
 		io:      &osIOHandler{},
 		plugin:  plugin,
 	}
+
 	// TODO: remove feature gate check after no longer needed
 	if utilfeature.DefaultFeatureGate.Enabled(features.BlockVolume) {
 		volumeMode, err := util.GetVolumeMode(spec)
@@ -205,7 +202,7 @@ func (plugin *fcPlugin) NewUnmounter(volName string, podUID types.UID) (volume.U
 }
 
 func (plugin *fcPlugin) newUnmounterInternal(volName string, podUID types.UID, manager diskManager, mounter mount.Interface) (volume.Unmounter, error) {
-	return &fcDiskUnmounter{
+	fcUnmounter := &fcDiskUnmounter{
 		fcDisk: &fcDisk{
 			podUID:  podUID,
 			volName: volName,
@@ -215,7 +212,9 @@ func (plugin *fcPlugin) newUnmounterInternal(volName string, podUID types.UID, m
 		},
 		mounter:    mounter,
 		deviceUtil: util.NewDeviceHandler(util.NewIOHandler()),
-	}, nil
+	}
+
+	return fcUnmounter, nil
 }
 
 func (plugin *fcPlugin) NewBlockVolumeUnmapper(volName string, podUID types.UID) (volume.BlockVolumeUnmapper, error) {
@@ -350,6 +349,7 @@ type fcDisk struct {
 	lun     string
 	wwids   []string
 	plugin  *fcPlugin
+	RemoteVolumeID string
 	// Utility interface that provides API calls to the provider to attach/detach disks.
 	manager diskManager
 	// io handler interface
@@ -408,9 +408,24 @@ func (b *fcDiskMounter) SetUp(fsGroup *int64) error {
 }
 
 func (b *fcDiskMounter) SetUpAt(dir string, fsGroup *int64) error {
-	// diskSetUp checks mountpoints and prevent repeated calls
-	err := diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
+	wwns, lun, err := ReadWwnsAndLunFromPluginsDir(b.GetVolumeIDFilePath())
 	if err != nil {
+		return fmt.Errorf("Can't get wwns and lun")
+	}
+
+	volumeID, err := ReadVolumeIDFromPluginsDir(b.GetVolumeIDFilePath())
+
+	if err != nil {
+		return fmt.Errorf("Can't get volumeID")
+	}
+	b.wwns = strings.Split(wwns, ",")
+	b.lun = lun
+	b.RemoteVolumeID = volumeID
+
+	// diskSetUp checks mountpoints and prevent repeated calls
+	err = diskSetUp(b.manager, *b, dir, b.mounter, fsGroup)
+	if err != nil {
+		glog.V(1).Infof("dellfcxxxx", err.Error())
 		glog.Errorf("fc: failed to setup")
 	}
 	return err
@@ -435,28 +450,48 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 	c.plugin.host.GetFcMutex().Lock()
 	defer c.plugin.host.GetFcMutex().Lock()
 
+	if _, err := os.Stat(c.GetVolumeIDFilePath()); err != nil {
+		if os.IsNotExist(err) {
+			glog.V(1).Info("FC: Before TearDownAt Successfully")
+			return nil
+		}
+	}
+
 	volumeID, err := ReadVolumeIDFromPluginsDir(c.GetVolumeIDFilePath())
 	if err != nil {
-		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes", "kubernetes.io~fc","dellvolumeinfo"), err)
-		return fmt.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"volumes","kubernetes.io~fc", "dellvolumeinfo"), err)
+		glog.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read VolumeID from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
 	}
 
 	wwns, lun, err := ReadWwnsAndLunFromPluginsDir(c.GetVolumeIDFilePath())
 	if err != nil {
-		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"volumes", "kubernetes.io~fc","dellvolumeinfo"), err)
-		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes","kubernetes.io~fc","dellvolumeinfo"), err)
+		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"dellvolumeinfo"), err)
 	}
 
 	if wwns == "" || lun == "" {
-		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes","kubernetes.io~fc", "dellvolumeinfo"), err)
-		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "volumes", "kubernetes.io~fc", "dellvolumeinfo"), err)
+		glog.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(), "dellvolumeinfo"), err)
+		return fmt.Errorf("Unable to read wwns and lun from %v , Meet %v", filepath.Join(c.GetVolumeIDFilePath(),"dellvolumeinfo"), err)
 	}
 
 	glog.V(1).Infof("Wwns=%v, Lun=%v , volomeID=%v  dir=%v ", wwns, lun, volumeID, dir)
 
 	dmName := getDMDiskName(strings.Split(wwns, ","), lun, c.io)
 
+	refs, err := mount.GetMountRefs(c.mounter, dir)
+	glog.V(1).Info("FC: ", dir)
 	err = util.UnmountPath(dir, c.mounter)
+	for _, ref := range refs {
+		if err := c.mounter.Unmount(ref); err != nil {
+			glog.V(1).Infof("RemoveDellVolume_Fail Step 5")
+			glog.V(1).Infof("failed to detach disk from %s , error is %v", ref, err)
+			glog.Errorf("failed to detach disk from %s , error is %v", ref, err)
+			return err
+		}
+		os.Remove(ref)
+	}
+
+	//os.Remove(filepath.Join(c.GetVolumeIDFilePath(), "volumes", "kubernetes.io~fc"))
 
 	if err != nil {
 		glog.Errorf("RemoveDellVolume_Fail Wwns=%v, Lun=%v , volomeID=%v error=%v", wwns, lun, volumeID, err)
@@ -487,15 +522,19 @@ func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 	}
 	glog.V(1).Infof("RemoveDellVolume_Success Wwns=%v, Lun=%v , volomeID=%v", wwns, lun, volumeID)
 	RemoveVolumeInfoFile(c.GetVolumeIDFilePath())
-	return err
+
+	glog.V(1).Info("FC: TearDownAt Successfully")
+
+	return nil
 }
 
+
 func RemoveVolumeInfoFile(path string) {
-	os.Remove(filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo"))
+	os.Remove(filepath.Join(path, "dellvolumeinfo"))
 }
 
 func ReadWwnsAndLunFromPluginsDir(path string) (wwns, lun string, err error) {
-	volumepath := filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	volumepath := filepath.Join(path, "dellvolumeinfo")
 	f, err := os.Open(volumepath)
 	if err != nil {
 		return wwns, lun, err
@@ -548,7 +587,8 @@ func ReadWwnsAndLunFromPluginsDir(path string) (wwns, lun string, err error) {
 }
 
 func ReadVolumeIDFromPluginsDir(path string) (string, error) {
-	volumepath := filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	//volumepath := filepath.Join(path, "volumes", "kubernetes.io~fc", "dellvolumeinfo")
+	volumepath := filepath.Join(path, "dellvolumeinfo")
 	f, err := os.Open(volumepath)
 	if err != nil {
 		return "", err
