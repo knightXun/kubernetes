@@ -135,6 +135,7 @@ func ListenAndServeKubeletServer(
 		Handler:        &handler,
 		MaxHeaderBytes: 1 << 20,
 	}
+
 	if tlsOptions != nil {
 		s.TLSConfig = tlsOptions.Config
 		// Passing empty strings as the cert and key files means no
@@ -208,14 +209,18 @@ func NewServer(
 		server.InstallAuthFilter()
 	}
 	server.InstallDefaultHandlers()
-	if enableDebuggingHandlers {
-		server.InstallDebuggingHandlers(criHandler)
-		if enableContentionProfiling {
-			goruntime.SetBlockProfileRate(1)
-		}
-	} else {
-		server.InstallDebuggingDisabledHandlers()
-	}
+
+	goruntime.SetBlockProfileRate(1)
+	server.InstallDebuggingHandlers(criHandler)
+
+	//if enableDebuggingHandlers {
+	//	server.InstallDebuggingHandlers(criHandler)
+	//	if enableContentionProfiling {
+	//		goruntime.SetBlockProfileRate(1)
+	//	}
+	//} else {
+	//	server.InstallDebuggingDisabledHandlers()
+	//}
 	return server
 }
 
@@ -403,7 +408,7 @@ func (s *Server) InstallDebuggingHandlers(criHandler http.Handler) {
 		}
 	}
 
-	// Setup pprof handlers.
+	//Setup pprof handlers.
 	ws = new(restful.WebService).Path(pprofBasePath)
 	ws.Route(ws.GET("/{subpath:*}").To(func(req *restful.Request, resp *restful.Response) {
 		handlePprofEndpoint(req, resp)

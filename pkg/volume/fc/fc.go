@@ -448,7 +448,7 @@ func (c *fcDiskUnmounter) TearDown() error {
 func (c *fcDiskUnmounter) TearDownAt(dir string) error {
 	glog.Infoln("begin uninstall dellfc volume: " + dir)
 	c.plugin.host.GetFcMutex().Lock()
-	defer c.plugin.host.GetFcMutex().Lock()
+	defer c.plugin.host.GetFcMutex().Unlock()
 
 	if _, err := os.Stat(c.GetVolumeIDFilePath()); err != nil {
 		if os.IsNotExist(err) {
