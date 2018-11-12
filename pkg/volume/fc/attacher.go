@@ -121,10 +121,10 @@ func (attacher *fcAttacher) WaitForAttach(spec *volume.Spec, devicePath string, 
 	mounter.wwns = wwns
 	mounter.lun = lun
 	lunInt, _ := strconv.Atoi(lun)
-	if spec.PersistentVolume.Spec.FC != nil {
+	if spec.PersistentVolume != nil && spec.PersistentVolume.Spec.FC != nil {
 		*spec.PersistentVolume.Spec.FC.Lun = int32(lunInt)
 		spec.PersistentVolume.Spec.FC.TargetWWNs = wwns
-	} else if spec.Volume.FC != nil {
+	} else if spec.Volume != nil && spec.Volume.FC != nil {
 		*spec.Volume.FC.Lun = int32(lunInt)
 		spec.Volume.FC.TargetWWNs = wwns
 	}

@@ -262,32 +262,6 @@ func (util *FCUtil) AttachDisk(b fcDiskMounter) (string, error) {
 
 // DetachDisk removes scsi device file such as /dev/sdX from the node.
 func (util *FCUtil) DetachDisk(c fcDiskUnmounter, devicePath string) error {
-	var devices []string
-	// devicePath might be like /dev/mapper/mpathX. Find destination.
-	dstPath, err := c.io.EvalSymlinks(devicePath)
-	if err != nil {
-		return err
-	}
-	// Find slave
-	if strings.HasPrefix(dstPath, "/dev/dm-") {
-		devices = c.deviceUtil.FindSlaveDevicesOnMultipath(dstPath)
-	} else {
-		// Add single devicepath to devices
-		devices = append(devices, dstPath)
-	}
-	glog.V(4).Infof("fc: DetachDisk devicePath: %v, dstPath: %v, devices: %v", devicePath, dstPath, devices)
-	var lastErr error
-	for _, device := range devices {
-		err := util.detachFCDisk(c.io, device)
-		if err != nil {
-			glog.Errorf("fc: detachFCDisk failed. device: %v err: %v", device, err)
-			lastErr = fmt.Errorf("fc: detachFCDisk failed. device: %v err: %v", device, err)
-		}
-	}
-	if lastErr != nil {
-		glog.Errorf("fc: last error occurred during detach disk:\n%v", lastErr)
-		return lastErr
-	}
 	return nil
 }
 
