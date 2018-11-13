@@ -230,6 +230,17 @@ func (dsw *desiredStateOfWorld) AddPodToVolume(
 			reportedInUse:      false,
 		}
 		dsw.volumesToMount[volumeName] = volumeObj
+	} else {
+		if volumeSpec.Volume != nil && volumeSpec.Volume.RBD != nil  {
+			if !volumeSpec.Volume.RBD.ReadOnly {
+				return "", fmt.Errorf("dellfcxxxx the writable rbd volume is hold by another pod on this node")
+			}
+		}
+		if volumeSpec.PersistentVolume != nil && volumeSpec.PersistentVolume.Spec.RBD != nil {
+			if !volumeSpec.PersistentVolume.Spec.RBD.ReadOnly {
+				return "", fmt.Errorf("dellfcxxxx the writable rbd volume is hold by another pod on this node")
+			}
+		}
 	}
 
 	// Create new podToMount object. If it already exists, it is refreshed with
@@ -305,7 +316,10 @@ func (dsw *desiredStateOfWorld) PodExistsInVolume(
 		return false
 	}
 
-	_, podExists := volumeObj.podsToMount[podName]
+	pod, podExists := volumeObj.podsToMount[podName]
+	if podExists && pod.podName != podName {
+		return false
+	}
 	return podExists
 }
 
