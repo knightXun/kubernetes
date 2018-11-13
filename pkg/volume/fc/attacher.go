@@ -312,7 +312,14 @@ func WriteVolumeInfoInPluginDir(rootpath, volName, volumeID, lun string, wwns []
 	glog.V(1).Infof("Write VolumeID: %v To %v", volName, volumepath)
 
 	os.Remove(volumepath)
-	os.Create(volumepath)
+	for ;true; {
+		_, err := os.Create(volumepath)
+		if err == nil {
+			break
+		} else {
+			time.Sleep( 100 * time.Millisecond)
+		}
+	}
 
 	f, err := os.OpenFile(volumepath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
