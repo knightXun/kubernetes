@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
@@ -81,6 +82,10 @@ const (
 	// The number of batches is given by:
 	//      1+floor(log_2(ceil(N/SlowStartInitialBatchSize)))
 	SlowStartInitialBatchSize = 1
+
+	maxNameLength          = 63
+	randomLength           = 5
+	maxGeneratedNameLength = maxNameLength - randomLength
 )
 
 var UpdateTaintBackoff = wait.Backoff{
@@ -544,6 +549,13 @@ func (r RealPodControl) PatchPod(namespace, name string, data []byte) error {
 	return err
 }
 
+func GenerateName(base string) string {
+	if len(base) > maxGeneratedNameLength {
+		base = base[:maxGeneratedNameLength]
+	}
+	return fmt.Sprintf("%s%s", base, utilrand.String(randomLength))
+}
+
 func GetPodFromTemplate(template *v1.PodTemplateSpec, parentObject runtime.Object, controllerRef *metav1.OwnerReference) (*v1.Pod, error) {
 	desiredLabels := getPodsLabelSet(template)
 	desiredFinalizers := getPodsFinalizers(template)
@@ -564,6 +576,9 @@ func GetPodFromTemplate(template *v1.PodTemplateSpec, parentObject runtime.Objec
 	}
 	if controllerRef != nil {
 		pod.OwnerReferences = append(pod.OwnerReferences, *controllerRef)
+		if controllerRef.Kind == "ReplicationController" || controllerRef.Kind == "Job" {
+			pod.Name = GenerateName(pod.GenerateName)
+		}
 	}
 	pod.Spec = *template.Spec.DeepCopy()
 	return pod, nil
@@ -595,7 +610,7 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
 		// Release IP for grouped pod.
 		if ip != "" {
-			releaseErr := ipUtil.ReleaseGroupedIP(pod.Namespace, pod.Labels[iputils.GroupedLabel], ip)
+			releaseErr := ipUtil.ReleaseGroupedIP(pod.Namespace, pod.Labels[iputils.GroupedLabel], ip, pod.Name)
 			glog.Warningf("Releasing IP because creating pod %v failed: releaseErr:%v", pod.Name, releaseErr)
 		}
 
