@@ -16,7 +16,7 @@ type RcChangeEvent struct {
 	RcName        string `json:"rcName,omitempty"`
 	Action        string `json:"action,omitempty"`
 	Room          string `json:"room,omitempty"`
-	ReadyReplicas int32  `json:"readyReplicas,omitempty"`
+	ReadyReplicas int32  `json:"readyReplicas"`
 }
 
 // Depracated
@@ -27,7 +27,7 @@ type StatefulsetChangeEvent struct {
 	SsName        string `json:"ssName,omitempty"`
 	Action        string `json:"action,omitempty"`
 	Room          string `json:"room,omitempty"`
-	ReadyReplicas int32  `json:"readyReplicas,omitempty"`
+	ReadyReplicas int32  `json:"readyReplicas"`
 }
 
 type JobChangeEvent struct {
