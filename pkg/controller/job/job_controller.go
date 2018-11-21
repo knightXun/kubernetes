@@ -329,6 +329,14 @@ func (jm *JobController) deletePod(obj interface{}) {
 	if err != nil {
 		return
 	}
+	if err == nil {
+		deleteIpErr := controller.ReleaseIPForPod(pod)
+		if deleteIpErr != nil {
+			glog.Errorf("Failed to release %v's IP in DeleteStatefulPod: %v", pod.Name, deleteIpErr)
+		}
+	}
+	podchange.RecordPodEvent(jm.recorder, pod, "JobPodDelete", "JobPodDelete")
+
 	jm.expectations.DeletionObserved(jobKey)
 	jm.enqueueController(job, true)
 }
