@@ -61,20 +61,21 @@ func (ssu *realStatefulSetStatusUpdater) UpdateStatefulSetStatus(
 	// don't wait due to limited number of clients, but backoff after the default number of steps
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		set.Status = *status
-		var beReady, beNotReady bool
+		beReady := false
+		beNotReady := false
 
 		if status.ReadyReplicas >= *set.Spec.Replicas {
 			beReady = true
-		} else if status.Replicas < *set.Spec.Replicas {
+		} else {
 			beNotReady = true
 		}
 		_, updateErr := ssu.client.AppsV1().StatefulSets(set.Namespace).UpdateStatus(set)
 		if updateErr == nil {
 			if beReady {
-				podchange.RecordStatefulSetStatusEvent(ssu.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetReady", set.Labels, set.Status.Replicas)
+				podchange.RecordStatefulSetStatusEvent(ssu.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetReady", set.Labels, set.Status.ReadyReplicas)
 			}
 			if beNotReady {
-				podchange.RecordStatefulSetStatusEvent(ssu.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetNotReady", set.Labels, set.Status.Replicas)
+				podchange.RecordStatefulSetStatusEvent(ssu.recorder, set.Name, set.Namespace, "StatefulSetStatusUpdate", "StatefulSetNotReady", set.Labels, set.Status.ReadyReplicas)
 			}
 			return nil
 		}
