@@ -57,11 +57,11 @@ func updateReplicaSetStatus(c unversionedextensions.ReplicaSetInterface, rs *ext
 	// Variables indicate whethter the RC becomes ready/unready
 	beReady := false
 	beNotReady := false
-	if newStatus.ReadyReplicas >= *rs.Spec.Replicas  {
+	if rs.Status.ReadyReplicas == *rs.Spec.Replicas && newStatus.ReadyReplicas >= rs.Status.Replicas  {
 		// ReadyReplicas increased to spec.Replicas. RC is ready.
 		glog.V(6).Infof("%v beReady!", rs.Name)
 		beReady = true
-	} else {
+	} else if rs.Status.ReadyReplicas == *rs.Spec.Replicas && newStatus.ReadyReplicas < rs.Status.Replicas {
 		// ReadyReplicas decreased from spec.Replicas. RC is NOT ready.
 		beNotReady = true
 		glog.V(6).Infof("%v beNotReady!", rs.Name)
