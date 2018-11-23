@@ -45,7 +45,7 @@ type IpUtils interface {
 	// Release IP from pod's annotation
 	ReleaseIPForPod(pod *v1.Pod) error
 	// Release IP with group
-	ReleaseGroupedIP(namespace, group, ip string) error
+	ReleaseGroupedIP(namespace, group, ip, podName string) error
 }
 
 type IpResp struct {
@@ -61,12 +61,14 @@ type IpRequire struct {
 	Location  string `json:"location,omitempty"`
 	Zone      string `json:"zone,omitempty"`
 	IsPrivate int    `json:"isPrivate,omitempty"`
+	PodName string `json:"podName,omitempty"`
 }
 
 type IpRelease struct {
 	IP     string `json:"ip,omitempty"`
 	Group  string `json:"group,omitempty"`
 	UserId int    `json:"userId,omitempty"`
+	PodName string `json:"podName,omitempty"`
 }
 
 type IpResult struct {
@@ -133,7 +135,7 @@ func (iu *ipUtils) sendReleaseIpReq(reqBytes []byte) (code int, err error) {
 	return
 }
 
-func (iu *ipUtils) ReleaseGroupedIP(namespace, group, ip string) error {
+func (iu *ipUtils) ReleaseGroupedIP(namespace, group, ip, podName string) error {
 	glog.V(6).Infof("ReleaseIP %v ip %v for group: %v", namespace, ip, group)
 	userIds := strings.Split(namespace, "-")
 	lenIds := len(userIds)
@@ -149,6 +151,7 @@ func (iu *ipUtils) ReleaseGroupedIP(namespace, group, ip string) error {
 	req := IpRelease{
 		IP:     ip,
 		UserId: uid,
+		PodName: podName,
 	}
 	if group != "" {
 		req.Group = group
@@ -205,6 +208,7 @@ func (iu *ipUtils) AddIPMaskIfPodLabeled(pod *v1.Pod, namespace string) (ip stri
 	}
 	req := IpRequire{
 		UserId: uid,
+		PodName: pod.Name,
 	}
 	if groupLabel != "" {
 		req.Group = groupLabel
@@ -289,7 +293,7 @@ func (iu *ipUtils) GetGroupedIpFromPod(pod *v1.Pod) (group, ip string) {
 func (iu *ipUtils) ReleaseIPForPod(pod *v1.Pod) error {
 	if group, ip := iu.GetGroupedIpFromPod(pod); ip != "" && ip != "none" && ip != "empty" {
 		glog.Infof("Releasing IP %v for pod %v", ip, pod.ObjectMeta)
-		err := iu.ReleaseGroupedIP(pod.Namespace, group, ip)
+		err := iu.ReleaseGroupedIP(pod.Namespace, group, ip, pod.Name)
 		return err
 	}
 	return nil

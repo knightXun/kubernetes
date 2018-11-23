@@ -68,7 +68,7 @@ func findDisk(wwn, lun string, io ioHandler, deviceUtil volumeutil.DeviceUtil) (
 	if dirs, err := io.ReadDir(dev_path); err == nil {
 		for _, f := range dirs {
 			name := f.Name()
-			if strings.Contains(name, fc_path) {
+			if strings.HasSuffix(name, fc_path) {
 				if disk, err1 := io.EvalSymlinks(dev_path + name); err1 == nil {
 					dm := deviceUtil.FindMultipathDeviceForDevice(disk)
 					glog.Infof("fc: find disk: %v, dm: %v", disk, dm)

@@ -27,6 +27,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
 	volutil "k8s.io/kubernetes/pkg/volume/util"
+	"strings"
 )
 
 // NewAttacher implements AttachableVolumePlugin.NewAttacher.
@@ -204,11 +205,21 @@ func (detacher *rbdDetacher) UnmountDevice(deviceMountPath string) error {
 		}
 		glog.V(3).Infof("rbd: successfully umount device mountpath %s", deviceMountPath)
 	}
-	glog.V(4).Infof("rbd: detaching device %s", devicePath)
-	err = detacher.manager.DetachDisk(detacher.plugin, deviceMountPath, devicePath)
-	if err != nil {
-		return err
+
+	if devicePath == "" {
+		glog.V(4).Infof("rbd: we can't get devicePath by mount, so get devicePath by rbd showmapped using deviceMountPath: %s", deviceMountPath)
+		devicePath = GetDevicePath(detacher.plugin, deviceMountPath)
 	}
+
+	if devicePath != "" {
+		glog.V(4).Infof("rbd: detaching device %s", devicePath)
+		err = detacher.manager.DetachDisk(detacher.plugin, deviceMountPath, devicePath)
+
+		if err != nil {
+			return err
+		}
+	}
+
 	glog.V(3).Infof("rbd: successfully detach device %s", devicePath)
 	err = os.Remove(deviceMountPath)
 	if err != nil {
@@ -216,6 +227,34 @@ func (detacher *rbdDetacher) UnmountDevice(deviceMountPath string) error {
 	}
 	glog.V(3).Infof("rbd: successfully remove device mount point %s", deviceMountPath)
 	return nil
+}
+
+func GetDevicePath(plugin *rbdPlugin, deviceMountPath string) string {
+	deviceMountedPaths := strings.Split(deviceMountPath, "-image-")
+	if len(deviceMountedPaths) != 2 {
+		return ""
+	}
+
+	rbdImageName := deviceMountedPaths[1]
+	// rbd showmapped | grep txx9-38-volume-113-guxiawei | awk '{print $5}'
+	command := "rbd showmapped | grep " + rbdImageName + " | awk '{print $5}'"
+	glog.V(3).Infof("rbd: get device by command: %s ,rbdImageName=%s ,deviceMountPath=%s", command, rbdImageName, deviceMountPath)
+	exec := plugin.host.GetExec(plugin.GetPluginName())
+	output, err := exec.Run("/bin/bash", "-c", command)
+
+	if err != nil {
+		return ""
+	} else {
+		deviceNames := strings.Split(string(output), "\n")
+		deviceName := ""
+		for _, s := range deviceNames {
+			if strings.Contains(s, "/rbd") {
+				deviceName = strings.Trim(s," ")
+				break
+			}
+		}
+		return deviceName
+	}
 }
 
 // Detach implements Detacher.Detach.

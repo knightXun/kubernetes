@@ -414,6 +414,13 @@ func (rsc *ReplicaSetController) deletePod(obj interface{}) {
 	if err != nil {
 		return
 	}
+	if err == nil {
+		deleteIpErr := controller.ReleaseIPForPod(pod)
+		if deleteIpErr != nil {
+			glog.Errorf("Failed to release %v's IP in DeleteStatefulPod: %v", pod.Name, deleteIpErr)
+		}
+	}
+	podchange.RecordPodEvent(rsc.recorder, pod, "RcPodDelete", "RcPodDelete")
 	glog.V(4).Infof("Pod %s/%s deleted through %v, timestamp %+v: %#v.", pod.Namespace, pod.Name, utilruntime.GetCaller(), pod.DeletionTimestamp, pod)
 	rsc.expectations.DeletionObserved(rsKey, controller.PodKey(pod))
 	rsc.enqueueReplicaSet(rs)

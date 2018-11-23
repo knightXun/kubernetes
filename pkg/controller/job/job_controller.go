@@ -329,6 +329,14 @@ func (jm *JobController) deletePod(obj interface{}) {
 	if err != nil {
 		return
 	}
+	if err == nil {
+		deleteIpErr := controller.ReleaseIPForPod(pod)
+		if deleteIpErr != nil {
+			glog.Errorf("Failed to release %v's IP in DeleteStatefulPod: %v", pod.Name, deleteIpErr)
+		}
+	}
+	podchange.RecordPodEvent(jm.recorder, pod, "JobPodDelete", "JobPodDelete")
+
 	jm.expectations.DeletionObserved(jobKey)
 	jm.enqueueController(job, true)
 }
@@ -595,6 +603,19 @@ func (jm *JobController) syncJob(key string) (bool, error) {
 		forget = true
 	}
 
+	// Send events and delete pod if job is finished.
+	if IsJobSuccessed(&job) {
+		go func() {
+			time.Sleep(2 * time.Second)
+			podchange.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobComplete", "JobComplete")
+		}()
+	} else if IsJobFailed(&job) {
+		go func() {
+			time.Sleep(2 * time.Second)
+			podchange.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobFailed", "JobFailed")
+		}()
+	}
+
 	// no need to update the job if the status hasn't changed since last time
 	if job.Status.Active != active || job.Status.Succeeded != succeeded || job.Status.Failed != failed || len(job.Status.Conditions) != conditions {
 		job.Status.Active = active
@@ -603,19 +624,6 @@ func (jm *JobController) syncJob(key string) (bool, error) {
 
 		if err := jm.updateHandler(&job); err != nil {
 			return forget, err
-		}
-
-		// Send events and delete pod if job is finished.
-		if IsJobSuccessed(&job) {
-			go func() {
-				time.Sleep(2 * time.Second)
-				podchange.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobComplete", "JobComplete")
-			}()
-		} else if IsJobFailed(&job) {
-			go func() {
-				time.Sleep(2 * time.Second)
-				podchange.RecordJobPodEvent(jm.recorder, job.Name, job.Namespace, "", "JobFailed", "JobFailed")
-			}()
 		}
 
 		if jobHaveNewFailure && !IsJobFinished(&job) {
