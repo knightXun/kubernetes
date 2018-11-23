@@ -125,6 +125,9 @@ func (f *fakeVolumeHost) GetRemoteVolumeServerAddress() string {
 	return ""
 }
 
+func (f *fakeVolumeHost) GetFcMutex() *sync.Mutex {
+	return nil
+}
 func (f *fakeVolumeHost) GetCloudProvider() cloudprovider.Interface {
 	return f.cloud
 }

@@ -211,11 +211,15 @@ func (detacher *rbdDetacher) UnmountDevice(deviceMountPath string) error {
 		devicePath = GetDevicePath(detacher.plugin, deviceMountPath)
 	}
 
-	glog.V(4).Infof("rbd: detaching device %s", devicePath)
-	err = detacher.manager.DetachDisk(detacher.plugin, deviceMountPath, devicePath)
-	if err != nil {
-		return err
+	if devicePath != "" {
+		glog.V(4).Infof("rbd: detaching device %s", devicePath)
+		err = detacher.manager.DetachDisk(detacher.plugin, deviceMountPath, devicePath)
+
+		if err != nil {
+			return err
+		}
 	}
+
 	glog.V(3).Infof("rbd: successfully detach device %s", devicePath)
 	err = os.Remove(deviceMountPath)
 	if err != nil {
@@ -226,12 +230,15 @@ func (detacher *rbdDetacher) UnmountDevice(deviceMountPath string) error {
 }
 
 func GetDevicePath(plugin *rbdPlugin, deviceMountPath string) string {
-	deviceMountedPaths := strings.Split(deviceMountPath, "/")
-	deviceMultiName := deviceMountedPaths[len(deviceMountedPaths)-1]
-	rbdImageNames := strings.Split(deviceMultiName, "-")
-	rbdImageName := rbdImageNames[len(rbdImageNames)-1]
+	deviceMountedPaths := strings.Split(deviceMountPath, "-image-")
+	if len(deviceMountedPaths) != 2 {
+		return ""
+	}
+
+	rbdImageName := deviceMountedPaths[1]
 	// rbd showmapped | grep txx9-38-volume-113-guxiawei | awk '{print $5}'
 	command := "rbd showmapped | grep " + rbdImageName + " | awk '{print $5}'"
+	glog.V(3).Infof("rbd: get device by command: %s ,rbdImageName=%s ,deviceMountPath=%s", command, rbdImageName, deviceMountPath)
 	exec := plugin.host.GetExec(plugin.GetPluginName())
 	output, err := exec.Run("/bin/bash", "-c", command)
 
