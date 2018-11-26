@@ -19,6 +19,7 @@ package rbd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"k8s.io/api/core/v1"
@@ -214,12 +215,19 @@ func (detacher *rbdDetacher) UnmountDevice(deviceMountPath string) error {
 	}
 	klog.V(3).Infof("rbd: successfully umount device mountpath %s", deviceMountPath)
 
-	klog.V(4).Infof("rbd: detaching device %s", devicePath)
-	err = detacher.manager.DetachDisk(detacher.plugin, deviceMountPath, devicePath)
-	if err != nil {
-		return err
+	if devicePath == "" {
+		devicePath = GetDevicePath(detacher.plugin, deviceMountPath)
 	}
-	klog.V(3).Infof("rbd: successfully detach device %s", devicePath)
+
+	if devicePath != "" {
+		klog.V(4).Infof("rbd: detaching device %s", devicePath)
+		err = detacher.manager.DetachDisk(detacher.plugin, deviceMountPath, devicePath)
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("rbd: successfully detach device %s", devicePath)
+	}
+
 	err = os.Remove(deviceMountPath)
 	if err != nil {
 		return err
@@ -231,4 +239,31 @@ func (detacher *rbdDetacher) UnmountDevice(deviceMountPath string) error {
 // Detach implements Detacher.Detach.
 func (detacher *rbdDetacher) Detach(volumeName string, nodeName types.NodeName) error {
 	return nil
+}
+
+func GetDevicePath(plugin *rbdPlugin, deviceMountPath string) string {
+	deviceMountedPaths := strings.Split(deviceMountPath, "-image-")
+	if len(deviceMountedPaths) != 2 {
+		return ""
+	}
+
+	rbdImageName := deviceMountedPaths[1]
+	// rbd showmapped | grep txx9-38-volume-113-huawei | awk '{print $5}'
+	command := "rbd showmapped | grep " + rbdImageName + " | awk '{print $5}'"
+	exec := plugin.host.GetExec(plugin.GetPluginName())
+	output, err := exec.Run("/bin/bash", "-c", command)
+
+	if err != nil {
+		return ""
+	} else {
+		deviceNames := strings.Split(string(output), "\n")
+		deviceName := ""
+		for _, s := range deviceNames {
+			if strings.Contains(s, "/rbd") {
+				deviceName = strings.Trim(s, " ")
+				break
+			}
+		}
+		return deviceName
+	}
 }
