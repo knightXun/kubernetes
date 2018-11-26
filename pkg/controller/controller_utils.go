@@ -576,9 +576,6 @@ func GetPodFromTemplate(template *v1.PodTemplateSpec, parentObject runtime.Objec
 	}
 	if controllerRef != nil {
 		pod.OwnerReferences = append(pod.OwnerReferences, *controllerRef)
-		if controllerRef.Kind == "ReplicationController" || controllerRef.Kind == "Job" {
-			pod.Name = GenerateName(pod.GenerateName)
-		}
 	}
 	pod.Spec = *template.Spec.DeepCopy()
 	return pod, nil
@@ -593,6 +590,13 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		pod.Spec.NodeName = nodeName
 	}
 
+	if controllerRef != nil {
+		if controllerRef.Kind == "ReplicationController" || controllerRef.Kind == "Job" {
+			pod.Name = GenerateName(pod.GenerateName)
+			glog.V(3).Infof("GenerateName PodName %v for %v", controllerRef.Name, pod.Name)
+		}
+	}
+
 	var ip string
 	var getIPErr error
 	if ipUtil != nil {
@@ -600,6 +604,8 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 		ip, _, getIPErr = ipUtil.AddIPMaskIfPodLabeled(pod, namespace)
 		if getIPErr != nil {
 			glog.Errorf("Failed to add ip and mask for pod %v: %v", pod.Name, err)
+		} else {
+			glog.V(3).Infof("Get ip: %s for pod %v: %v", ip, pod.Name)
 		}
 	}
 
@@ -618,8 +624,10 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 	} else {
 		switch controllerRef.Kind {
 		case "ReplicationController":
+			glog.V(4).Infof("Controller %v created pod %v GroupLabel %v with IP %v", controllerRef.Name, newPod.Name, newPod.Labels[iputils.GroupedLabel], ip)
 			podchange.RecordRCPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "RcPodAdd", "RcPodAdd")
 		case "Job":
+			glog.V(4).Infof("Controller %v created pod %v GroupLabel %v with IP %v", controllerRef.Name, newPod.Name, newPod.Labels[iputils.GroupedLabel], ip)
 			podchange.RecordJobPodEvent(r.Recorder, controllerRef.Name, newPod.Namespace, newPod.Name, "JobPodAdd", "JobPodAdd")
 		}
 		accessor, err := meta.Accessor(object)
