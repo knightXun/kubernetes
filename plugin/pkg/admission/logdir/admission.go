@@ -64,7 +64,9 @@ func addLogVolumesIfNeeded(pod *api.Pod, namespace string) bool {
 				// We have to know pod name in advance.
 				if !flag && len(pod.OwnerReferences) > 0 && pod.OwnerReferences[0].Kind != "StatefulSet" {
 					// Generate Pod name now because we need it as metadata for logdir path.
-					pod.Name = names.SimpleNameGenerator.GenerateName(pod.GenerateName)
+					if pod.Name == "" {
+						pod.Name = names.SimpleNameGenerator.GenerateName(pod.GenerateName)
+					}
 				}
 				flag = true
 				containerName := strs[1]
