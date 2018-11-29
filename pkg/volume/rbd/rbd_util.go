@@ -326,7 +326,7 @@ func (util *RBDUtil) rbdUnlock(b rbdMounter) error {
 	args = append(args, secret_opt...)
 	cmd, err = b.exec.Run("rbd", args...)
 	output = string(cmd)
-	glog.V(4).Infof("lock list output %q", output)
+	glog.V(4).Infof("ImageID %v lock list output %q", b.Image, output)
 	if err != nil {
 		return err
 	}
@@ -338,6 +338,7 @@ func (util *RBDUtil) rbdUnlock(b rbdMounter) error {
 		}
 	}
 
+	glog.V(1).Infof("rbd %v locker is: %v lockerID %v", b.Image, locker, lock_id)
 	// Remove a lock if found: rbd lock remove.
 	if len(locker) > 0 {
 		args := []string{"lock", "remove", b.Image, lock_id, locker, "--pool", b.Pool, "--id", b.Id, "-m", mon}
