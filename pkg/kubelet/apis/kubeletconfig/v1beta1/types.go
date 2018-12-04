@@ -434,6 +434,8 @@ type KubeletConfiguration struct {
 	EnforceNodeAllocatable []string `json:"enforceNodeAllocatable,omitempty"`
 
 	RemoteVolumeServerAddr string  `json:"remoteVolumeServerAddr,omitempty"`
+
+	GPUScale int32 `json:"GPUScale,omitempty"`
 }
 
 type KubeletAuthorizationMode string

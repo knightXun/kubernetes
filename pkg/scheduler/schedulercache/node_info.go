@@ -67,6 +67,7 @@ type Resource struct {
 	MilliCPU         int64
 	Memory           int64
 	NvidiaGPU        int64
+	NvidiaRealGPU    int64
 	EphemeralStorage int64
 	// We store allowedPodNumber (which is Node.Status.Allocatable.Pods().Value())
 	// explicitly as int, to avoid conversions and improve performance.
@@ -190,6 +191,13 @@ func (n *NodeInfo) Pods() []*v1.Pod {
 		return nil
 	}
 	return n.pods
+}
+
+func (n *NodeInfo) RealGPUs() int {
+	if n == nil {
+		return 0
+	}
+	return int(n.node.Status.Capacity.NvidiaRealGPU().Value())
 }
 
 // UsedPorts returns used ports on this node.

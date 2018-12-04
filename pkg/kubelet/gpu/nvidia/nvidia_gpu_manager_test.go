@@ -68,7 +68,7 @@ func TestNewNvidiaGPUManager(t *testing.T) {
 	podLister := &testActivePodsLister{}
 
 	// Expects nil GPUManager and an error with nil dockerClient.
-	testGpuManager1, err := NewNvidiaGPUManager(podLister, nil)
+	testGpuManager1, err := NewNvidiaGPUManager(podLister, nil, 1)
 	as := assert.New(t)
 	as.Nil(testGpuManager1)
 	as.NotNil(err)
@@ -76,7 +76,7 @@ func TestNewNvidiaGPUManager(t *testing.T) {
 	// Expects a GPUManager to be created with non-nil dockerClient.
 	testGpuManager2, err := NewNvidiaGPUManager(podLister, &dockershim.ClientConfig{
 		DockerEndpoint: libdocker.FakeDockerEndpoint,
-	})
+	}, 1)
 	as.NotNil(testGpuManager2)
 	as.Nil(err)
 
@@ -210,4 +210,14 @@ func TestPodContainerRestart(t *testing.T) {
 	as.Nil(err)
 	as.Equal(len(devicesA), 3)
 	as.True(sets.NewString(devicesA...).Equal(sets.NewString(devicesAretry...)))
+}
+
+func Test_AllocateGpus(t *testing.T) {
+	gpus1 := []string{"gpu0-1","gpu1-1", "gpu2-1", "gpu3-2", "gpu1-0", "gpu0-2"}
+	gpus := allocateGpus(gpus1, 4)
+	println(len(gpus))
+	for _, g := range gpus {
+		print(g, " ")
+	}
+	println()
 }
