@@ -64,9 +64,9 @@ func (ssu *realStatefulSetStatusUpdater) UpdateStatefulSetStatus(
 		beReady := false
 		beNotReady := false
 
-		if set.Status.ReadyReplicas == *set.Spec.Replicas && status.ReadyReplicas >= set.Status.ReadyReplicas {
+		if *set.Spec.Replicas != 0 && set.Status.ReadyReplicas == *set.Spec.Replicas && status.ReadyReplicas >= set.Status.ReadyReplicas {
 			beReady = true
-		} else if set.Status.ReadyReplicas == *set.Spec.Replicas && status.ReadyReplicas < set.Status.ReadyReplicas {
+		} else if *set.Spec.Replicas != 0 && set.Status.ReadyReplicas == *set.Spec.Replicas && status.ReadyReplicas < set.Status.ReadyReplicas {
 			beNotReady = true
 		}
 		_, updateErr := ssu.client.AppsV1().StatefulSets(set.Namespace).UpdateStatus(set)
