@@ -747,6 +747,11 @@ func PodFitsResources(pod *v1.Pod, meta algorithm.PredicateMetadata, nodeInfo *s
 		predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceNvidiaGPU, podRequest.NvidiaGPU, nodeInfo.RequestedResource().NvidiaGPU, allocatable.NvidiaGPU))
 	}
 
+	if podRequest.NvidiaGPU > int64(nodeInfo.RealGPUs()) {
+		glog.V(1).Infof("podRequestGPU: %v, Node %v , NodeRealGpus: %v", podRequest.NvidiaGPU, nodeInfo.Node().Name, nodeInfo.RealGPUs())
+		predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceNvidiaRealGPU, podRequest.NvidiaGPU, int64(nodeInfo.RealGPUs()), allocatable.NvidiaGPU))
+	}
+
 	if allocatable.EphemeralStorage < podRequest.EphemeralStorage+nodeInfo.RequestedResource().EphemeralStorage {
 		predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceEphemeralStorage, podRequest.EphemeralStorage, nodeInfo.RequestedResource().EphemeralStorage, allocatable.EphemeralStorage))
 	}

@@ -3655,6 +3655,8 @@ const (
 	ResourceEphemeralStorage ResourceName = "ephemeral-storage"
 	// NVIDIA GPU, in devices. Alpha, might change: although fractional and allowing values >1, only one whole device per node is assigned.
 	ResourceNvidiaGPU ResourceName = "alpha.kubernetes.io/nvidia-gpu"
+
+	ResourceNvidiaRealGPU ResourceName = "alpha.kubernetes.io/nvidia-real-gpu"
 )
 
 const (

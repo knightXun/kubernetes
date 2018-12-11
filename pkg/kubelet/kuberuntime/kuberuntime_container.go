@@ -46,12 +46,14 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/util/selinux"
 	"k8s.io/kubernetes/pkg/util/tail"
+	"regexp"
 )
 
 var (
 	ErrCreateContainerConfig = errors.New("CreateContainerConfigError")
 	ErrCreateContainer       = errors.New("CreateContainerError")
 	ErrPostStartHook         = errors.New("PostStartHookError")
+	nvidiaFullpathRE = regexp.MustCompile(`^/dev/nvidia[0-9]*-[0-9]$`)
 )
 
 // recordContainerEvent should be used by the runtime manager for all container related events.
@@ -199,6 +201,25 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(container *v1.Contai
 		return nil, cleanupAction, fmt.Errorf("create container log directory for container %s failed: %v", container.Name, err)
 	}
 	containerLogsPath := buildContainerLogsPath(container.Name, restartCount)
+	nvidiaGpuDevicesLabels := ""
+	gpuUsed := map[string]string{}
+	devices := []kubecontainer.DeviceInfo{}
+	for index, device := range opts.Devices {
+		if IsGpuDevice(device.PathOnHost) {
+			nvidiaGpuDevicesLabels = nvidiaGpuDevicesLabels + device.PathOnHost + ","
+			nvidiaPath := strings.Split(device.PathOnHost, "-")
+			if gpuUsed[nvidiaPath[0]] == "" {
+				devices = append(devices, kubecontainer.DeviceInfo{PathOnHost: nvidiaPath[0], PathInContainer: nvidiaPath[0], Permissions: "mrw"})
+				gpuUsed[nvidiaPath[0]] = nvidiaPath[0]
+			}
+		} else {
+			devices = append(devices, opts.Devices[index])
+		}
+	}
+	opts.Devices = devices
+	glog.V(3).Infof("Allocate Devices %v for Pod %v", devices, pod.Name)
+	nvidiaGpuDevicesLabels = strings.TrimSuffix(nvidiaGpuDevicesLabels, ",")
+
 	restartCountUint32 := uint32(restartCount)
 	config := &runtimeapi.ContainerConfig{
 		Metadata: &runtimeapi.ContainerMetadata{
@@ -219,6 +240,7 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(container *v1.Contai
 		Tty:         container.TTY,
 	}
 
+	config.Labels["NvidiaDevices"] = nvidiaGpuDevicesLabels
 	// set platform specific configurations.
 	if err := m.applyPlatformSpecificContainerConfig(config, container, pod, uid, username); err != nil {
 		return nil, cleanupAction, err
@@ -826,4 +848,8 @@ func (m *kubeGenericRuntimeManager) removeContainerLog(containerID string) error
 // DeleteContainer removes a container.
 func (m *kubeGenericRuntimeManager) DeleteContainer(containerID kubecontainer.ContainerID) error {
 	return m.removeContainer(containerID.ID)
+}
+
+func IsGpuDevice(path string) bool {
+	return nvidiaFullpathRE.MatchString(path)
 }

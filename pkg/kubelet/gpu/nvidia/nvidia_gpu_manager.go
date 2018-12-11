@@ -33,6 +33,8 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/dockershim"
 	"k8s.io/kubernetes/pkg/kubelet/dockershim/libdocker"
 	"k8s.io/kubernetes/pkg/kubelet/gpu"
+	"strconv"
+	"sort"
 )
 
 // TODO: rework to use Nvidia's NVML, which is more complex, but also provides more fine-grained information and stats.
@@ -48,7 +50,7 @@ const (
 
 var (
 	nvidiaDeviceRE   = regexp.MustCompile(`^nvidia[0-9]*$`)
-	nvidiaFullpathRE = regexp.MustCompile(`^/dev/nvidia[0-9]*$`)
+	nvidiaFullpathRE = regexp.MustCompile(`^/dev/nvidia[0-9]*-[0-9]$`)
 )
 
 type activePodsLister interface {
@@ -58,6 +60,7 @@ type activePodsLister interface {
 
 // nvidiaGPUManager manages nvidia gpu devices.
 type nvidiaGPUManager struct {
+	gpuScale  int32
 	sync.Mutex
 	// All gpus available on the Node
 	allGPUs        sets.String
@@ -71,16 +74,21 @@ type nvidiaGPUManager struct {
 
 // NewNvidiaGPUManager returns a GPUManager that manages local Nvidia GPUs.
 // TODO: Migrate to use pod level cgroups and make it generic to all runtimes.
-func NewNvidiaGPUManager(activePodsLister activePodsLister, config *dockershim.ClientConfig) (gpu.GPUManager, error) {
+func NewNvidiaGPUManager(activePodsLister activePodsLister, config *dockershim.ClientConfig, gpuScale int32) (gpu.GPUManager, error) {
 	dockerClient := dockershim.NewDockerClientFromConfig(config)
 	if dockerClient == nil {
 		return nil, fmt.Errorf("invalid docker client configure specified")
+	}
+
+	if gpuScale < 0 || gpuScale > 4 {
+		return nil, fmt.Errorf("gpu-scale must be in [1,3]")
 	}
 
 	return &nvidiaGPUManager{
 		allGPUs:          sets.NewString(),
 		dockerClient:     dockerClient,
 		activePodsLister: activePodsLister,
+		gpuScale:         gpuScale,
 	}, nil
 }
 
@@ -116,8 +124,10 @@ func (ngm *nvidiaGPUManager) Start() error {
 // Get how many GPU cards we have.
 func (ngm *nvidiaGPUManager) Capacity() v1.ResourceList {
 	gpus := resource.NewQuantity(int64(len(ngm.allGPUs)), resource.DecimalSI)
+	realGpus := resource.NewQuantity(int64(int32(len(ngm.allGPUs)) / ngm.gpuScale ), resource.DecimalSI)
 	return v1.ResourceList{
 		v1.ResourceNvidiaGPU: *gpus,
+		v1.ResourceNvidiaRealGPU: *realGpus,
 	}
 }
 
@@ -164,7 +174,12 @@ func (ngm *nvidiaGPUManager) AllocateGPU(pod *v1.Pod, container *v1.Container) (
 	if int64(available.Len()) < gpusNeeded {
 		return nil, fmt.Errorf("requested number of GPUs unavailable. Requested: %d, Available: %d", gpusNeeded, available.Len())
 	}
-	ret := available.UnsortedList()[:gpusNeeded]
+	if int64( int32(len(ngm.allGPUs)) / ngm.gpuScale) < gpusNeeded {
+		return nil, fmt.Errorf("requested number of GPUs unavailable. Requested: %d, RealGpus: %d", gpusNeeded, int32(len(ngm.allGPUs)) / ngm.gpuScale)
+	}
+
+	//ret := available.UnsortedList()[:gpusNeeded]
+	ret := allocateGpus(available.UnsortedList(), int(gpusNeeded))
 	for _, device := range ret {
 		// Update internal allocated GPU cache.
 		ngm.allocated.insert(string(pod.UID), container.Name, device)
@@ -173,6 +188,46 @@ func (ngm *nvidiaGPUManager) AllocateGPU(pod *v1.Pod, container *v1.Container) (
 	ret = append(ret, ngm.defaultDevices...)
 
 	return ret, nil
+}
+
+func allocateGpus(gpus []string, gpusNeeded int) (allocatedGpus []string) {
+	sortedGpus := sort.StringSlice(gpus)
+	sortedGpus.Sort()
+	gpuRecords := map[string][]string{}
+	for _, gpu := range sortedGpus {
+		spes := strings.Split(gpu,"-")
+		if gpuRecords[spes[0]] == nil {
+			gpuRecords[spes[0]] = []string{gpu}
+		} else {
+			gpuRecords[spes[0]] = append(gpuRecords[spes[0]], gpu)
+		}
+	}
+
+	//determine allocate how many gpu cards
+	realRestGpus := len(gpuRecords)
+	alloctateGpuNums := 0
+	if realRestGpus >= gpusNeeded {
+		alloctateGpuNums = gpusNeeded
+	} else {
+		alloctateGpuNums = getMaxStatisfiedGpus(realRestGpus, gpusNeeded)
+	}
+
+	for _, v := range gpuRecords {
+		if len(allocatedGpus) >= alloctateGpuNums {
+			break
+		}
+		allocatedGpus = append(allocatedGpus, v[0])
+	}
+	return allocatedGpus
+}
+
+func getMaxStatisfiedGpus(x, y int) int {
+	for i := x ; i > 0 ; i-- {
+		if y % i == 0 {
+			return i
+		}
+	}
+	return 1
 }
 
 // updateAllocatedGPUs updates the list of GPUs in use.
@@ -206,8 +261,10 @@ func (ngm *nvidiaGPUManager) discoverGPUs() error {
 			continue
 		}
 		if nvidiaDeviceRE.MatchString(f.Name()) {
-			glog.V(2).Infof("Found Nvidia GPU %q", f.Name())
-			ngm.allGPUs.Insert(path.Join(devDirectory, f.Name()))
+			for index := int32(1) ; index <= ngm.gpuScale ; index++ {
+				glog.V(2).Infof("Found Nvidia GPU %q", f.Name() + "-" + strconv.FormatInt(int64(index), 10))
+				ngm.allGPUs.Insert(path.Join(devDirectory, f.Name()) + "-" + strconv.FormatInt(int64(index), 10))
+			}
 		}
 	}
 
@@ -259,17 +316,25 @@ func (ngm *nvidiaGPUManager) gpusInUse() *podGPUs {
 				continue
 			}
 
-			devices := containerJSON.HostConfig.Devices
-			if devices == nil {
-				continue
-			}
+			nvidiaDevices := strings.Split(containerJSON.Config.Labels["NvidiaDevices"], ",")
 
-			for _, device := range devices {
-				if isValidPath(device.PathOnHost) {
-					glog.V(4).Infof("Nvidia GPU %q is in use by Docker Container: %q", device.PathOnHost, containerJSON.ID)
-					ret.insert(podContainer.uid, containerIdentifier.name, device.PathOnHost)
+			for _, device := range nvidiaDevices {
+				if isValidPath(device) {
+					glog.V(4).Infof("Nvidia GPU %q is in use by Docker Container: %q", device, containerJSON.ID)
+					ret.insert(podContainer.uid, containerIdentifier.name, device)
 				}
 			}
+			//devices := containerJSON.HostConfig.Devices
+			//if devices == nil {
+			//	continue
+			//}
+			//
+			//for _, device := range devices {
+			//	if isValidPath(device.PathOnHost) {
+			//		glog.V(4).Infof("Nvidia GPU %q is in use by Docker Container: %q", device.PathOnHost, containerJSON.ID)
+			//		ret.insert(podContainer.uid, containerIdentifier.name, device.PathOnHost)
+			//	}
+			//}
 		}
 	}
 	return ret

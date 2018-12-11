@@ -55,6 +55,13 @@ func (self *ResourceList) NvidiaGPU() *resource.Quantity {
 	return &resource.Quantity{}
 }
 
+func (self *ResourceList) NvidiaRealGPU() *resource.Quantity {
+	if val, ok := (*self)[ResourceNvidiaRealGPU]; ok {
+		return &val
+	}
+	return &resource.Quantity{}
+}
+
 func (self *ResourceList) StorageEphemeral() *resource.Quantity {
 	if val, ok := (*self)[ResourceEphemeralStorage]; ok {
 		return &val

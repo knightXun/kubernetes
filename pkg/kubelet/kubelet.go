@@ -538,6 +538,7 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		keepTerminatedPodVolumes:                keepTerminatedPodVolumes,
 		remoteVolumeServerAddr:                	 kubeCfg.RemoteVolumeServerAddr,
 		fcmutex:                                 &sync.Mutex{},
+		gpuScale:                                kubeCfg.GPUScale,
 	}
 
 	secretManager := secret.NewCachingSecretManager(
@@ -907,7 +908,7 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	if utilfeature.DefaultFeatureGate.Enabled(features.Accelerators) {
 		if containerRuntime == kubetypes.DockerContainerRuntime {
 			glog.Warningln("Accelerators feature is deprecated and will be removed in v1.11. Please use device plugins instead. They can be enabled using the DevicePlugins feature gate.")
-			if klet.gpuManager, err = nvidia.NewNvidiaGPUManager(klet, kubeDeps.DockerClientConfig); err != nil {
+			if klet.gpuManager, err = nvidia.NewNvidiaGPUManager(klet, kubeDeps.DockerClientConfig, klet.gpuScale); err != nil {
 				return nil, err
 			}
 		} else {
@@ -1220,6 +1221,8 @@ type Kubelet struct {
 	remoteVolumeServerAddr string
 
 	fcmutex *sync.Mutex
+
+	gpuScale int32
 }
 
 func allLocalIPsWithoutLoopback() ([]net.IP, error) {

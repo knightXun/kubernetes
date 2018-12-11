@@ -212,6 +212,8 @@ type KubeletFlags struct {
 	// hostIPCSources is a comma-separated list of sources from which the
 	// Kubelet allows pods to use the host ipc namespace. Defaults to "*".
 	HostIPCSources []string
+
+	GPUScale int32
 }
 
 // NewKubeletFlags will create a new KubeletFlags with default values
@@ -235,6 +237,7 @@ func NewKubeletFlags() *KubeletFlags {
 		NonMasqueradeCIDR:                   "10.0.0.0/8",
 		RegisterSchedulable:                 true,
 		ExperimentalKernelMemcgNotification: false,
+		GPUScale:                            1,
 		ExperimentalQOSReserved:             make(map[string]string),
 		RemoteRuntimeEndpoint:               remoteRuntimeEndpoint,
 		RotateCertificates:                  false,
@@ -434,7 +437,6 @@ func (f *KubeletFlags) AddFlags(mainfs *pflag.FlagSet) {
 	// TODO(#58010:v1.12.0): Remove --host-ipc-sources, it is deprecated
 	fs.StringSliceVar(&f.HostIPCSources, "host-ipc-sources", f.HostIPCSources, "Comma-separated list of sources from which the Kubelet allows pods to use the host ipc namespace.")
 	fs.MarkDeprecated("host-ipc-sources", "will be removed in a future version")
-
 }
 
 // AddKubeletConfigFlags adds flags for a specific kubeletconfig.KubeletConfiguration to the specified FlagSet
@@ -571,4 +573,7 @@ func AddKubeletConfigFlags(mainfs *pflag.FlagSet, c *kubeletconfig.KubeletConfig
 	fs.StringVar(&c.SystemReservedCgroup, "system-reserved-cgroup", c.SystemReservedCgroup, "Absolute name of the top level cgroup that is used to manage non-kubernetes components for which compute resources were reserved via '--system-reserved' flag. Ex. '/system-reserved'. [default='']")
 	fs.StringVar(&c.KubeReservedCgroup, "kube-reserved-cgroup", c.KubeReservedCgroup, "Absolute name of the top level cgroup that is used to manage kubernetes components for which compute resources were reserved via '--kube-reserved' flag. Ex. '/kube-reserved'. [default='']")
 	fs.StringVar(&c.RemoteVolumeServerAddr, "remote-volume-server-address", c.RemoteVolumeServerAddr, "the remote volume server kubelet should connect to get the node can support which type of volume and execute maptoserver action")
+
+	fs.Int32Var(&c.GPUScale, "gpu-scale", c.GPUScale, "virtualize one gpu to many gpus")
+
 }

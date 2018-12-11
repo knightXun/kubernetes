@@ -269,6 +269,8 @@ type KubeletConfiguration struct {
 	EnforceNodeAllocatable []string
 
 	RemoteVolumeServerAddr string
+
+	GPUScale int32
 }
 
 type KubeletAuthorizationMode string

@@ -110,6 +110,7 @@ func (kl *Kubelet) makeGPUDevices(pod *v1.Pod, container *v1.Container) ([]kubec
 	for _, path := range nvidiaGPUPaths {
 		// Devices have to be mapped one to one because of nvidia CUDA library requirements.
 		devices = append(devices, kubecontainer.DeviceInfo{PathOnHost: path, PathInContainer: path, Permissions: "mrw"})
+		glog.V(3).Infof("Allocate GPU %v for pod %v", path, pod.Name)
 	}
 
 	return devices, nil
