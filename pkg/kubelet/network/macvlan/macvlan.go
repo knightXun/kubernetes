@@ -77,9 +77,18 @@ func NewPlugin(pluginDir string, client libdocker.Interface) network.NetworkPlug
 			glog.Warningf("Error loading macvlan config file %s: %v", confFile, err)
 			continue
 		}
-		mode = conf.Network.Type
-		hostInterfaceName = conf.Network.Name
-		break
+		//	Add by wangzhuzhen for support multi cni config file
+		if conf.Network.Type == "" || conf.Network.Type ==  "bridge" || conf.Network.Type == "private" || conf.Network.Type == "vepa" || conf.Network.Type == "passthru" {
+			mode = conf.Network.Type
+			hostInterfaceName = conf.Network.Name
+			break
+		}
+
+		// Add by wangzhuzhen
+
+		//mode = conf.Network.Type
+		//hostInterfaceName = conf.Network.Name
+		//break
 	}
 	// Ping message for flushing ARP records in switchers.
 	pingMessage := icmp.Message{
