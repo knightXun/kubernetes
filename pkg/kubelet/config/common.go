@@ -139,12 +139,17 @@ func tryDecodeSinglePod(data []byte, defaultFn defaultFunc) (parsed bool, pod *v
 }
 
 func tryDecodePodList(data []byte, defaultFn defaultFunc) (parsed bool, pods v1.PodList, err error) {
-	obj, err := runtime.Decode(legacyscheme.Codecs.UniversalDecoder(), data)
+	json, err := utilyaml.ToJSON(data)
+	if err != nil {
+		return false, pods, err
+	}
+	obj, err := runtime.Decode(legacyscheme.Codecs.UniversalDecoder(), json)
 	if err != nil {
 		return false, pods, err
 	}
 
 	newPods, ok := obj.(*api.PodList)
+	glog.Infof("PodList type %v, length %v", obj.GetObjectKind(), len(newPods.Items))
 	// Check whether the object could be converted to list of pods.
 	if !ok {
 		err = fmt.Errorf("invalid pods list: %#v", obj)
