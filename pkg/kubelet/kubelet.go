@@ -541,6 +541,10 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		gpuScale:                                kubeCfg.GPUScale,
 	}
 
+	if klet.gpuScale == 0 {
+		klet.gpuScale = 1
+	}
+
 	secretManager := secret.NewCachingSecretManager(
 		kubeDeps.KubeClient, secret.GetObjectTTLFromNodeFunc(klet.GetNode))
 	klet.secretManager = secretManager
