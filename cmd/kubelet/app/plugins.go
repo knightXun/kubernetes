@@ -123,7 +123,7 @@ func ProbeNetworkPlugins(cniConfDir, cniBinDir, networkPluginName string) []netw
 	if networkPluginName == "macvlan" {
 		allPlugins = append(allPlugins, macvlan.NewPlugin(cniConfDir, nil))
 	}
-	allPlugins = append(allPlugins, macvlan.NewPlugin(cniConfDir, nil))
+	//allPlugins = append(allPlugins, macvlan.NewPlugin(cniConfDir, nil))
 	allPlugins = append(allPlugins, kubenet.NewPlugin(cniBinDir))
 
 	return allPlugins
