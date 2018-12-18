@@ -88,6 +88,7 @@ func (s *sourceURL) extractFromURL() error {
 		return err
 	}
 	req.Header = s.header
+	req.Header.Add("NodeName", string(s.nodeName))
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return err

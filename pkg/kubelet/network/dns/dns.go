@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 var (
@@ -117,7 +118,8 @@ func (c *Configurer) formDNSSearchFitsLimits(composedSearch []string, pod *v1.Po
 
 	if limitsExceeded {
 		log := fmt.Sprintf("Search Line limits were exceeded, some search paths have been omitted, the applied search line is: %s", strings.Join(composedSearch, " "))
-		c.recorder.Event(pod, v1.EventTypeWarning, "DNSConfigForming", log)
+		podchange.RecordPodLevelEvent(c.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", "DNSConfigForming", log)
+		//c.recorder.Event(pod, v1.EventTypeWarning, "DNSConfigForming", log)
 		glog.Error(log)
 	}
 	return composedSearch
@@ -127,7 +129,8 @@ func (c *Configurer) formDNSNameserversFitsLimits(nameservers []string, pod *v1.
 	if len(nameservers) > validation.MaxDNSNameservers {
 		nameservers = nameservers[0:validation.MaxDNSNameservers]
 		log := fmt.Sprintf("Nameserver limits were exceeded, some nameservers have been omitted, the applied nameserver line is: %s", strings.Join(nameservers, " "))
-		c.recorder.Event(pod, v1.EventTypeWarning, "DNSConfigForming", log)
+		podchange.RecordPodLevelEvent(c.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady","DNSConfigForming",  log)
+		//c.recorder.Event(pod, v1.EventTypeWarning, "DNSConfigForming", log)
 		glog.Error(log)
 	}
 	return nameservers
@@ -155,7 +158,8 @@ func (c *Configurer) generateSearchesForDNSClusterFirst(hostSearch []string, pod
 func (c *Configurer) CheckLimitsForResolvConf() {
 	f, err := os.Open(c.ResolverConfig)
 	if err != nil {
-		c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", err.Error())
+		podchange.RecordNodeLevelEvent(c.recorder, string(c.nodeRef.Name), v1.EventTypeWarning, "NodeDnsFailed","CheckLimitsForResolvConf", err.Error())
+		//c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", err.Error())
 		glog.Error("CheckLimitsForResolvConf: " + err.Error())
 		return
 	}
@@ -163,7 +167,8 @@ func (c *Configurer) CheckLimitsForResolvConf() {
 
 	_, hostSearch, _, err := parseResolvConf(f)
 	if err != nil {
-		c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", err.Error())
+		podchange.RecordNodeLevelEvent(c.recorder, string(c.nodeRef.Name), v1.EventTypeWarning, "NodeDnsFailed","CheckLimitsForResolvConf", err.Error())
+		//c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", err.Error())
 		glog.Error("CheckLimitsForResolvConf: " + err.Error())
 		return
 	}
@@ -176,14 +181,16 @@ func (c *Configurer) CheckLimitsForResolvConf() {
 
 	if len(hostSearch) > domainCountLimit {
 		log := fmt.Sprintf("Resolv.conf file '%s' contains search line consisting of more than %d domains!", c.ResolverConfig, domainCountLimit)
-		c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", log)
+		podchange.RecordNodeLevelEvent(c.recorder, string(c.nodeRef.Name), v1.EventTypeWarning, "NodeDnsFailed","CheckLimitsForResolvConf", log)
+		//c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", log)
 		glog.Error("CheckLimitsForResolvConf: " + log)
 		return
 	}
 
 	if len(strings.Join(hostSearch, " ")) > validation.MaxDNSSearchListChars {
 		log := fmt.Sprintf("Resolv.conf file '%s' contains search line which length is more than allowed %d chars!", c.ResolverConfig, validation.MaxDNSSearchListChars)
-		c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", log)
+		//c.recorder.Event(c.nodeRef, v1.EventTypeWarning, "CheckLimitsForResolvConf", log)
+		podchange.RecordNodeLevelEvent(c.recorder, string(c.nodeRef.Name), v1.EventTypeWarning, "NodeDnsFailed","CheckLimitsForResolvConf", log)
 		glog.Error("CheckLimitsForResolvConf: " + log)
 		return
 	}
@@ -354,8 +361,11 @@ func (c *Configurer) GetPodDNS(pod *v1.Pod) (*runtimeapi.DNSConfig, error) {
 		}
 		// clusterDNS is not known. Pod with ClusterDNSFirst Policy cannot be created.
 		nodeErrorMsg := fmt.Sprintf("kubelet does not have ClusterDNS IP configured and cannot create Pod using %q policy. Falling back to %q policy.", v1.DNSClusterFirst, v1.DNSDefault)
-		c.recorder.Eventf(c.nodeRef, v1.EventTypeWarning, "MissingClusterDNS", nodeErrorMsg)
-		c.recorder.Eventf(pod, v1.EventTypeWarning, "MissingClusterDNS", "pod: %q. %s", format.Pod(pod), nodeErrorMsg)
+		podchange.RecordNodeLevelEvent(c.recorder, string(c.nodeRef.Name), v1.EventTypeWarning, "NodeDnsFailed","MissingClusterDNS", nodeErrorMsg)
+		//c.recorder.Eventf(c.nodeRef, v1.EventTypeWarning, "MissingClusterDNS", nodeErrorMsg)
+		podErrorMsg := fmt.Sprintf("pod: %q. %s", format.Pod(pod), nodeErrorMsg)
+		podchange.RecordPodLevelEvent(c.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady","MissingClusterDNS",  podErrorMsg)
+		//c.recorder.Eventf(pod, v1.EventTypeWarning, "MissingClusterDNS", "pod: %q. %s", format.Pod(pod), nodeErrorMsg)
 		// Fallback to DNSDefault.
 		fallthrough
 	case podDNSHost:

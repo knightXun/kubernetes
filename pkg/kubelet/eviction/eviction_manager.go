@@ -43,6 +43,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/server/stats"
 	kubelettypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const (
@@ -347,7 +348,9 @@ func (m *managerImpl) synchronize(diskInfoProvider DiskInfoProvider, podFunc Act
 	softEviction := isSoftEvictionThresholds(thresholds, resourceToReclaim)
 
 	// record an event about the resources we are now attempting to reclaim via eviction
-	m.recorder.Eventf(m.nodeRef, v1.EventTypeWarning, "EvictionThresholdMet", "Attempting to reclaim %s", resourceToReclaim)
+	msg := fmt.Sprintf("Attempting to reclaim %s", resourceToReclaim)
+	podchange.RecordNodeLevelEvent(m.recorder, string(m.nodeRef.Name), v1.EventTypeWarning, "NodeEvictStart", "EvictionThresholdMet", msg)
+	//m.recorder.Eventf(m.nodeRef, v1.EventTypeWarning, "EvictionThresholdMet", "Attempting to reclaim %s", resourceToReclaim)
 
 	// check if there are node-level resources we can reclaim to reduce pressure before evicting end-user pods.
 	if m.reclaimNodeLevelResources(resourceToReclaim) {
@@ -399,7 +402,8 @@ func (m *managerImpl) synchronize(diskInfoProvider DiskInfoProvider, podFunc Act
 			Reason:  reason,
 		}
 		// record that we are evicting the pod
-		m.recorder.Eventf(pod, v1.EventTypeWarning, reason, fmt.Sprintf(message, resourceToReclaim))
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", reason, fmt.Sprintf(message, resourceToReclaim))
+		//m.recorder.Eventf(pod, v1.EventTypeWarning, reason, fmt.Sprintf(message, resourceToReclaim))
 		gracePeriodOverride := int64(0)
 		if softEviction {
 			gracePeriodOverride = m.config.MaxPodGracePeriodSeconds
@@ -583,7 +587,8 @@ func (m *managerImpl) evictPod(pod *v1.Pod, resourceName v1.ResourceName, evictM
 		Reason:  reason,
 	}
 	// record that we are evicting the pod
-	m.recorder.Eventf(pod, v1.EventTypeWarning, reason, evictMsg)
+	podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", reason, evictMsg)
+	//m.recorder.Eventf(pod, v1.EventTypeWarning, reason, evictMsg)
 	gracePeriod := int64(0)
 	err := m.killPodFunc(pod, status, &gracePeriod)
 	if err != nil {

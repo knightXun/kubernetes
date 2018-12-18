@@ -47,6 +47,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/selinux"
 	"k8s.io/kubernetes/pkg/util/tail"
 	"regexp"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 var (
@@ -62,7 +63,8 @@ var (
 // is prone to causing a lot of distinct events that do not count well.
 // it replaces any reference to a containerID with the containerName which is stable, and is what users know.
 func (m *kubeGenericRuntimeManager) recordContainerEvent(pod *v1.Pod, container *v1.Container, containerID, eventType, reason, message string, args ...interface{}) {
-	ref, err := kubecontainer.GenerateContainerRef(pod, container)
+	_, err := kubecontainer.GenerateContainerRef(pod, container)
+	//ref, err := kubecontainer.GenerateContainerRef(pod, container)
 	if err != nil {
 		glog.Errorf("Can't make a ref to pod %q, container %v: %v", format.Pod(pod), container.Name, err)
 		return
@@ -77,7 +79,8 @@ func (m *kubeGenericRuntimeManager) recordContainerEvent(pod *v1.Pod, container 
 	if containerID != "" {
 		eventMessage = strings.Replace(eventMessage, containerID, container.Name, -1)
 	}
-	m.recorder.Event(ref, eventType, reason, eventMessage)
+	//podchange.RecordContainerLevelEvent(m.recorder, pod.Name, container.Name, eventType, reason, eventMessage)
+	//m.recorder.Event(ref, eventType, reason, eventMessage)
 }
 
 // startContainer starts a container and returns a message indicates why it is failed on error.
@@ -90,6 +93,8 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 	// Step 1: pull the image.
 	imageRef, msg, err := m.imagePuller.EnsureImageExists(pod, container, pullSecrets)
 	if err != nil {
+		errMsg := fmt.Sprintf("Container %v Error: %v", container.Name, grpc.ErrorDesc(err))
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedToCreateContainer, errMsg)
 		m.recordContainerEvent(pod, container, "", v1.EventTypeWarning, events.FailedToCreateContainer, "Error: %v", grpc.ErrorDesc(err))
 		return msg, err
 	}
@@ -113,20 +118,28 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 		defer cleanupAction()
 	}
 	if err != nil {
+		errMsg := fmt.Sprintf("Container %v Error: %v", container.Name, grpc.ErrorDesc(err))
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedToCreateContainer, errMsg)
 		m.recordContainerEvent(pod, container, "", v1.EventTypeWarning, events.FailedToCreateContainer, "Error: %v", grpc.ErrorDesc(err))
 		return grpc.ErrorDesc(err), ErrCreateContainerConfig
 	}
 
 	containerID, err := m.runtimeService.CreateContainer(podSandboxID, containerConfig, podSandboxConfig)
 	if err != nil {
+		errMsg := fmt.Sprintf("Container %v Error: %v", container.Name, grpc.ErrorDesc(err))
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedToCreateContainer, errMsg)
 		m.recordContainerEvent(pod, container, containerID, v1.EventTypeWarning, events.FailedToCreateContainer, "Error: %v", grpc.ErrorDesc(err))
 		return grpc.ErrorDesc(err), ErrCreateContainer
 	}
 	err = m.internalLifecycle.PreStartContainer(pod, container, containerID)
 	if err != nil {
-		m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedToStartContainer, "Internal PreStartContainer hook failed: %v", err)
+		msg := fmt.Sprintf("Container %v Internal PreStartContainer hook failed: %v", container.Name, err)
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedToStartContainer, msg)
+		//podchange.RecordContainerLevelEvent(m.recorder, pod.Name, container.Name, v1.EventTypeWarning, events.FailedToStartContainer, msg)
+		//m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedToStartContainer, "Internal PreStartContainer hook failed: %v", err)
 		return "Internal PreStartContainer hook failed", err
 	}
+	podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeNormal, "Pending", "NotReady", events.CreatedContainer, "Created container")
 	m.recordContainerEvent(pod, container, containerID, v1.EventTypeNormal, events.CreatedContainer, "Created container")
 
 	if ref != nil {
@@ -139,9 +152,12 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 	// Step 3: start the container.
 	err = m.runtimeService.StartContainer(containerID)
 	if err != nil {
+		errMsg := fmt.Sprintf("Container %v Error: %v", container.Name, grpc.ErrorDesc(err))
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedToStartContainer, errMsg)
 		m.recordContainerEvent(pod, container, containerID, v1.EventTypeWarning, events.FailedToStartContainer, "Error: %v", grpc.ErrorDesc(err))
 		return grpc.ErrorDesc(err), kubecontainer.ErrRunContainer
 	}
+	podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeNormal, "Pending", "NotReady", events.StartedContainer, "Started container")
 	m.recordContainerEvent(pod, container, containerID, v1.EventTypeNormal, events.StartedContainer, "Started container")
 
 	// Symlink container logs to the legacy container log location for cluster logging
@@ -165,6 +181,7 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 		}
 		msg, handlerErr := m.runner.Run(kubeContainerID, pod, container, container.Lifecycle.PostStart)
 		if handlerErr != nil {
+			podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedPostStartHook, msg)
 			m.recordContainerEvent(pod, container, kubeContainerID.ID, v1.EventTypeWarning, events.FailedPostStartHook, msg)
 			if err := m.killContainer(pod, kubeContainerID, container.Name, "FailedPostStartHook", nil); err != nil {
 				glog.Errorf("Failed to kill container %q(id=%q) in pod %q: %v, %v",
@@ -480,6 +497,7 @@ func (m *kubeGenericRuntimeManager) executePreStopHook(pod *v1.Pod, containerID 
 		defer utilruntime.HandleCrash()
 		if msg, err := m.runner.Run(containerID, pod, containerSpec, containerSpec.Lifecycle.PreStop); err != nil {
 			glog.Errorf("preStop hook for container %q failed: %v", containerSpec.Name, err)
+			podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedPreStopHook, msg)
 			m.recordContainerEvent(pod, containerSpec, containerID.ID, v1.EventTypeWarning, events.FailedPreStopHook, msg)
 		}
 	}()
@@ -597,6 +615,7 @@ func (m *kubeGenericRuntimeManager) killContainer(pod *v1.Pod, containerID kubec
 	if reason != "" {
 		message = fmt.Sprint(message, ":", reason)
 	}
+	podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeNormal, "Running", "NotReady", events.KillingContainer, message)
 	m.recordContainerEvent(pod, containerSpec, containerID.ID, v1.EventTypeNormal, events.KillingContainer, message)
 	m.containerRefManager.ClearRef(containerID)
 

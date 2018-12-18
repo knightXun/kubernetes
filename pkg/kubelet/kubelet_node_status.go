@@ -46,6 +46,7 @@ import (
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
 	"k8s.io/kubernetes/pkg/version"
 	volutil "k8s.io/kubernetes/pkg/volume/util"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const (
@@ -443,7 +444,64 @@ func (kl *Kubelet) recordNodeStatusEvent(eventType, event string) {
 	glog.V(2).Infof("Recording %s event message for node %s", event, kl.nodeName)
 	// TODO: This requires a transaction, either both node status is updated
 	// and event is recorded or neither should happen, see issue #6055.
-	kl.recorder.Eventf(kl.nodeRef, eventType, event, "Node %s status is now: %s", kl.nodeName, event)
+	if _, ok := kl.StatusCache[event]; !ok {
+		if event == "NodeReady" {
+			if kl.StatusCache["NodeNotReady"] {
+				delete(kl.StatusCache, "NodeNotReady")
+			}
+		} else if event == "NodeNotReady" {
+			if kl.StatusCache["NodeReady"] {
+				delete(kl.StatusCache, "NodeReady")
+			}
+		} else if event == "NodeHasInsufficientMemory" {
+			if kl.StatusCache["NodeHasSufficientMemory"] {
+				delete(kl.StatusCache, "NodeHasSufficientMemory")
+			}
+		} else if event == "NodeHasSufficientMemory" {
+			if kl.StatusCache["NodeHasInsufficientMemory"] {
+				delete(kl.StatusCache, "NodeHasInsufficientMemory")
+			}
+		} else if event == "NodeHasInsufficientPID" {
+			if kl.StatusCache["NodeHasSufficientPID"] {
+				delete(kl.StatusCache, "NodeHasSufficientPID")
+			}
+		} else if event == "NodeHasSufficientPID" {
+			if kl.StatusCache["NodeHasInsufficientPID"] {
+				delete(kl.StatusCache, "NodeHasInsufficientPID")
+			}
+		} else if event == "NodeHasDiskPressure" {
+			if kl.StatusCache["NodeHasNoDiskPressure"] {
+				delete(kl.StatusCache, "NodeHasNoDiskPressure")
+			}
+		} else if event == "NodeHasNoDiskPressure" {
+			if kl.StatusCache["NodeHasDiskPressure"] {
+				delete(kl.StatusCache, "NodeHasDiskPressure")
+			}
+		} else if event == "NodeHasSufficientDisk" {
+			if kl.StatusCache["NodeHasInSufficientDisk"] {
+				delete(kl.StatusCache, "NodeHasInSufficientDisk")
+			}
+		} else if event == "NodeHasInSufficientDisk" {
+			if kl.StatusCache["NodeHasSufficientDisk"] {
+				delete(kl.StatusCache, "NodeHasSufficientDisk")
+			}
+		} else if event == "NodeNotSchedulable" {
+			if kl.StatusCache["NodeSchedulable"] {
+				delete(kl.StatusCache, "NodeSchedulable")
+			}
+		} else if event == "NodeSchedulable" {
+			if kl.StatusCache["NodeNotSchedulable"] {
+				delete(kl.StatusCache, "NodeNotSchedulable")
+			}
+		}
+		kl.StatusCache[event] = true
+	} else {
+		return
+	}
+
+	msg := fmt.Sprintf("Node %s status is now: %s", kl.nodeName, event)
+	podchange.RecordNodeLevelEvent(kl.recorder, string(kl.nodeName), eventType, event, event, msg)
+	//kl.recorder.Eventf(kl.nodeRef, eventType, event, "Node %s status is now: %s", kl.nodeName, event)
 }
 
 // Set IP and hostname addresses for the node.
@@ -613,8 +671,10 @@ func (kl *Kubelet) setNodeStatusMachineInfo(node *v1.Node) {
 			node.Status.NodeInfo.BootID != info.BootID {
 			// TODO: This requires a transaction, either both node status is updated
 			// and event is recorded or neither should happen, see issue #6055.
-			kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.NodeRebooted,
-				"Node %s has been rebooted, boot id: %s", kl.nodeName, info.BootID)
+			msg := fmt.Sprintf("Node %s has been rebooted, boot id: %s", kl.nodeName, info.BootID)
+			podchange.RecordNodeLevelEvent(kl.recorder, string(kl.nodeName), v1.EventTypeWarning, events.NodeRebooted, events.NodeRebooted, msg)
+			//kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.NodeRebooted,
+			//	"Node %s has been rebooted, boot id: %s", kl.nodeName, info.BootID)
 		}
 		node.Status.NodeInfo.BootID = info.BootID
 
@@ -1035,6 +1095,8 @@ func (kl *Kubelet) setNodeOODCondition(node *v1.Node) {
 		nodeOODCondition.Message = "kubelet has sufficient disk space available"
 		nodeOODCondition.LastTransitionTime = currentTime
 		kl.recordNodeStatusEvent(v1.EventTypeNormal, "NodeHasSufficientDisk")
+	} else {
+		kl.recordNodeStatusEvent(v1.EventTypeWarning, "NodeHasInSufficientDisk")
 	}
 
 	// Update the heartbeat time irrespective of all the conditions.

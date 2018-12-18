@@ -37,6 +37,8 @@ import (
 	kubepod "k8s.io/kubernetes/pkg/kubelet/pod"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	"k8s.io/kubernetes/pkg/util/podchange"
+	"k8s.io/client-go/tools/record"
 )
 
 // A wrapper around v1.PodStatus that includes a version to enforce that stale pod statuses are
@@ -68,6 +70,7 @@ type manager struct {
 	// apiStatusVersions must only be accessed from the sync thread.
 	apiStatusVersions map[kubetypes.MirrorPodUID]uint64
 	podDeletionSafety PodDeletionSafetyProvider
+	recorder           record.EventRecorder
 }
 
 // PodStatusProvider knows how to provide status for a pod. It's intended to be used by other components
@@ -110,7 +113,7 @@ type Manager interface {
 
 const syncPeriod = 10 * time.Second
 
-func NewManager(kubeClient clientset.Interface, podManager kubepod.Manager, podDeletionSafety PodDeletionSafetyProvider) Manager {
+func NewManager(kubeClient clientset.Interface, podManager kubepod.Manager, podDeletionSafety PodDeletionSafetyProvider, record record.EventRecorder) Manager {
 	return &manager{
 		kubeClient:        kubeClient,
 		podManager:        podManager,
@@ -118,6 +121,7 @@ func NewManager(kubeClient clientset.Interface, podManager kubepod.Manager, podD
 		podStatusChannel:  make(chan podStatusSyncRequest, 1000), // Buffer up to 1000 statuses
 		apiStatusVersions: make(map[kubetypes.MirrorPodUID]uint64),
 		podDeletionSafety: podDeletionSafety,
+		recorder:           record,
 	}
 }
 
@@ -132,6 +136,7 @@ func (m *manager) Start() {
 	// Don't start the status manager if we don't have a client. This will happen
 	// on the master, where the kubelet is responsible for bootstrapping the pods
 	// of the master components.
+
 	if m.kubeClient == nil {
 		glog.Infof("Kubernetes client is nil, not starting status manager.")
 		return
@@ -291,6 +296,19 @@ func checkContainerStateTransition(oldStatuses, newStatuses []v1.ContainerStatus
 	return nil
 }
 
+// IsPodReady returns true if a pod is ready; false otherwise.
+func IsPodReady(status v1.PodStatus) bool {
+	return podutil.IsPodReadyConditionTrue(status)
+}
+
+func (m *manager) recorderPodEvents(pod *v1.Pod, new v1.PodStatus) {
+	ready := IsPodReady(new)
+	if ready {
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeNormal, "Running", "Ready", "PeriodStatusCheck", "PeriodStatusCheck PodReady")
+	} else {
+		podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeNormal, "Pending", "NotReady", "PeriodStatusCheck", "PeriodStatusCheck PodReady")
+	}
+}
 // updateStatusInternal updates the internal status cache, and queues an update to the api server if
 // necessary. Returns whether an update was triggered.
 // This method IS NOT THREAD SAFE and must be called from a locked function.
@@ -299,9 +317,14 @@ func (m *manager) updateStatusInternal(pod *v1.Pod, status v1.PodStatus, forceUp
 	cachedStatus, isCached := m.podStatuses[pod.UID]
 	if isCached {
 		oldStatus = cachedStatus.status
+		if IsPodReady(oldStatus) != IsPodReady(status) {
+			m.recorderPodEvents(pod, status)
+		}
 	} else if mirrorPod, ok := m.podManager.GetMirrorPodByPod(pod); ok {
+		//m.recorderPodEvents(pod, status)
 		oldStatus = mirrorPod.Status
 	} else {
+		//m.recorderPodEvents(pod, status)
 		oldStatus = pod.Status
 	}
 
@@ -471,6 +494,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 	}
 	pod.Status = status.status
 	// TODO: handle conflict as a retry, make that easier too.
+
 	newPod, err := m.kubeClient.CoreV1().Pods(pod.Namespace).UpdateStatus(pod)
 	if err != nil {
 		glog.Warningf("Failed to update status for pod %q: %v", format.Pod(pod), err)
@@ -491,6 +515,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 			glog.Warningf("Failed to delete status for pod %q: %v", format.Pod(pod), err)
 			return
 		}
+
 		glog.V(3).Infof("Pod %q fully terminated and removed from etcd", format.Pod(pod))
 		m.deletePodStatus(uid)
 	}

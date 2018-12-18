@@ -1,50 +1,35 @@
 package mqevent
 
 import (
-	"k8s.io/api/core/v1"
-	"github.com/streadway/amqp"
-	"sync"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"github.com/golang/glog"
 )
 
-const MSG_TIMEOUT = 3 * 60 // 3min
-
-type MqOptions struct {
-	MqUrl    string // rabbitmq's URL
-	Username string // rabbitmq's username
-	Passwd   string // rabbitmq's passwd
-	MqType   string // amqp or amqps
-	//TLSConfig tls.config
-}
-
-type MqManager struct {
-	Conn      *amqp.Connection
-	Consummer *amqp.Channel
-	Producer  *amqp.Channel
-	BuildCh   *amqp.Channel
-	Incoming  <-chan amqp.Delivery
-	url       string
-	connected bool
-	close     chan bool
-	closed    bool
-	mtx       sync.Mutex
-}
-
 type MqEvents struct {
+	mqManager 	*MqManager
 
 }
 
-func NewMqEvents() *MqEvents {
-	return nil
+func NewMqEvents(MqUrl, MQUsername, MQPasswd, MqType, VHost string) *MqEvents {
+	mqManager := NewRabbitMQConn(MqUrl, MQUsername, MQPasswd, MqType, VHost)
+	err := mqManager.Init()
+	if err != nil {
+		glog.V(3).Infof("Can't Create MqEvents %v", err)
+	}
+	return &MqEvents{
+		mqManager: mqManager,
+	}
 }
 
-func (mq *MqEvents) CreateWithEventNamespace(*v1.Event) (*v1.Event, error) {
-	return nil, nil
+func (mq *MqEvents) Event(object runtime.Object, eventtype, reason, message string) {
+	go mq.mqManager.SendMsgAck(message)
 }
 
-func (mq *MqEvents) UpdateWithEventNamespace(*v1.Event) (*v1.Event, error) {
-	return nil, nil
+// Eventf is just like Event, but with Sprintf for the message field.
+func (mq *MqEvents) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}){
 }
 
-func (mq *MqEvents) PatchWithEventNamespace(event *v1.Event, data []byte) (result *v1.Event, err error) {
-	return nil, nil
+// PastEventf is just like Eventf, but with an option to specify the event's 'timestamp' field.
+func (mq *MqEvents) PastEventf(object runtime.Object, timestamp metav1.Time, eventtype, reason, messageFmt string, args ...interface{}) {
 }

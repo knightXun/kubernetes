@@ -31,8 +31,10 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/events"
 	"k8s.io/kubernetes/pkg/kubelet/eviction"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/kubelet/util/queue"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 // OnCompleteFunc is a function that is invoked when an operation completes.
@@ -150,6 +152,10 @@ func newPodWorkers(syncPodFn syncPodFnType, recorder record.EventRecorder, workQ
 	}
 }
 
+func IsPodReady(status v1.PodStatus) bool {
+	return podutil.IsPodReadyConditionTrue(status)
+}
+
 func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
 	var lastSyncTime time.Time
 	for update := range podUpdates {
@@ -164,7 +170,14 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
 			if err != nil {
 				// This is the legacy event thrown by manage pod loop
 				// all other events are now dispatched from syncPodFn
-				p.recorder.Eventf(update.Pod, v1.EventTypeWarning, events.FailedSync, "error determining status: %v", err)
+				//p.recorder.Eventf(update.Pod, v1.EventTypeWarning, events.FailedSync, "error determining status: %v", err)
+				msg := fmt.Sprintf("error determining status: %v", err)
+				isReady := IsPodReady(update.Pod.Status)
+				if isReady {
+					podchange.RecordPodLevelEvent(p.recorder, update.Pod, v1.EventTypeWarning, "Running", "Ready", events.FailedSync, msg)
+				} else {
+					podchange.RecordPodLevelEvent(p.recorder, update.Pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedSync, msg)
+				}
 				return err
 			}
 			err = p.syncPodFn(syncPodOptions{
@@ -326,7 +339,9 @@ func killPodNow(podWorkers PodWorkers, recorder record.EventRecorder) eviction.K
 		case r := <-ch:
 			return r.err
 		case <-time.After(timeoutDuration):
-			recorder.Eventf(pod, v1.EventTypeWarning, events.ExceededGracePeriod, "Container runtime did not kill the pod within specified grace period.")
+			msg := "Container runtime did not kill the pod within specified grace period."
+			podchange.RecordPodLevelEvent(recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.ExceededGracePeriod, msg)
+			//recorder.Eventf(pod, v1.EventTypeWarning, events.ExceededGracePeriod, "Container runtime did not kill the pod within specified grace period.")
 			return fmt.Errorf("timeout waiting to kill pod")
 		}
 	}

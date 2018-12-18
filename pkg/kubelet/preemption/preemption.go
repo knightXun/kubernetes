@@ -34,6 +34,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/scheduler/algorithm"
 	"k8s.io/kubernetes/pkg/scheduler/algorithm/predicates"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const message = "Preempted in order to admit critical pod"
@@ -106,7 +107,8 @@ func (c *CriticalPodAdmissionHandler) evictPodsToFreeRequests(insufficientResour
 			Reason:  events.PreemptContainer,
 		}
 		// record that we are evicting the pod
-		c.recorder.Eventf(pod, v1.EventTypeWarning, events.PreemptContainer, message)
+		podchange.RecordPodLevelEvent(c.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.PreemptContainer, message)
+		//c.recorder.Eventf(pod, v1.EventTypeWarning, events.PreemptContainer, message)
 		// this is a blocking call and should only return when the pod and its containers are killed.
 		err := c.killPodFunc(pod, status, nil)
 		if err != nil {

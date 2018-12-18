@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/events"
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const (
@@ -92,11 +93,15 @@ func (cm *containerManagerImpl) enforceNodeAllocatableCgroups() error {
 			for {
 				err := cm.cgroupManager.Update(cgroupConfig)
 				if err == nil {
-					cm.recorder.Event(nodeRef, v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, "Updated Node Allocatable limit across pods")
+					podchange.RecordNodeLevelEvent(cm.recorder, string(nodeRef.Name), v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement,
+						events.SuccessfulNodeAllocatableEnforcement, "Updated Node Allocatable limit across pods")
+					//cm.recorder.Event(nodeRef, v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, "Updated Node Allocatable limit across pods")
 					return
 				}
 				message := fmt.Sprintf("Failed to update Node Allocatable Limits %q: %v", cm.cgroupRoot, err)
-				cm.recorder.Event(nodeRef, v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, message)
+				podchange.RecordNodeLevelEvent(cm.recorder, string(nodeRef.Name), v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement,
+					events.FailedNodeAllocatableEnforcement, message)
+				//cm.recorder.Event(nodeRef, v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, message)
 				time.Sleep(time.Minute)
 			}
 		}()
@@ -106,19 +111,25 @@ func (cm *containerManagerImpl) enforceNodeAllocatableCgroups() error {
 		glog.V(2).Infof("Enforcing System reserved on cgroup %q with limits: %+v", nc.SystemReservedCgroupName, nc.SystemReserved)
 		if err := enforceExistingCgroup(cm.cgroupManager, nc.SystemReservedCgroupName, nc.SystemReserved); err != nil {
 			message := fmt.Sprintf("Failed to enforce System Reserved Cgroup Limits on %q: %v", nc.SystemReservedCgroupName, err)
-			cm.recorder.Event(nodeRef, v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, message)
+			podchange.RecordNodeLevelEvent(cm.recorder, string(nodeRef.Name), v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, events.FailedNodeAllocatableEnforcement, message)
+			//cm.recorder.Event(nodeRef, v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, message)
 			return fmt.Errorf(message)
 		}
-		cm.recorder.Eventf(nodeRef, v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, "Updated limits on system reserved cgroup %v", nc.SystemReservedCgroupName)
+		msg := fmt.Sprintf("Updated limits on system reserved cgroup %v", nc.SystemReservedCgroupName)
+		podchange.RecordNodeLevelEvent(cm.recorder, string(nodeRef.Name), v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, events.SuccessfulNodeAllocatableEnforcement, msg)
+		//cm.recorder.Eventf(nodeRef, v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, "Updated limits on system reserved cgroup %v", nc.SystemReservedCgroupName)
 	}
 	if nc.EnforceNodeAllocatable.Has(kubetypes.KubeReservedEnforcementKey) {
 		glog.V(2).Infof("Enforcing kube reserved on cgroup %q with limits: %+v", nc.KubeReservedCgroupName, nc.KubeReserved)
 		if err := enforceExistingCgroup(cm.cgroupManager, nc.KubeReservedCgroupName, nc.KubeReserved); err != nil {
 			message := fmt.Sprintf("Failed to enforce Kube Reserved Cgroup Limits on %q: %v", nc.KubeReservedCgroupName, err)
-			cm.recorder.Event(nodeRef, v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, message)
+			//cm.recorder.Event(nodeRef, v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, message)
+			podchange.RecordNodeLevelEvent(cm.recorder, string(nodeRef.Name), v1.EventTypeWarning, events.FailedNodeAllocatableEnforcement, events.FailedNodeAllocatableEnforcement, message)
 			return fmt.Errorf(message)
 		}
-		cm.recorder.Eventf(nodeRef, v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, "Updated limits on kube reserved cgroup %v", nc.KubeReservedCgroupName)
+		msg := fmt.Sprintf("Updated limits on kube reserved cgroup %v", nc.KubeReservedCgroupName)
+		podchange.RecordNodeLevelEvent(cm.recorder, string(nodeRef.Name), v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, events.SuccessfulNodeAllocatableEnforcement, msg)
+		//cm.recorder.Eventf(nodeRef, v1.EventTypeNormal, events.SuccessfulNodeAllocatableEnforcement, "Updated limits on kube reserved cgroup %v", nc.KubeReservedCgroupName)
 	}
 	return nil
 }

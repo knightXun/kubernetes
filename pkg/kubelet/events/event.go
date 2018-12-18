@@ -18,28 +18,28 @@ package events
 
 const (
 	// Container event reason list
-	CreatedContainer        = "Created"
-	StartedContainer        = "Started"
-	FailedToCreateContainer = "Failed"
-	FailedToStartContainer  = "Failed"
-	KillingContainer        = "Killing"
+	CreatedContainer        = "ContainerCreated"
+	StartedContainer        = "ContainerStarted"
+	FailedToCreateContainer = "ContainerCreateFailed"
+	FailedToStartContainer  = "ContainerStartFailed"
+	KillingContainer        = "ContainerKilling"
 	PreemptContainer        = "Preempting"
-	BackOffStartContainer   = "BackOff"
+	BackOffStartContainer   = "ContainerBackOff"
 	ExceededGracePeriod     = "ExceededGracePeriod"
 
 	// Pod event reason list
 	FailedToKillPod                = "FailedKillPod"
 	FailedToCreatePodContainer     = "FailedCreatePodContainer"
-	FailedToMakePodDataDirectories = "Failed"
+	FailedToMakePodDataDirectories = "FailedToMakePodDataDirectories"
 	NetworkNotReady                = "NetworkNotReady"
 
 	// Image event reason list
-	PullingImage            = "Pulling"
-	PulledImage             = "Pulled"
-	FailedToPullImage       = "Failed"
-	FailedToInspectImage    = "InspectFailed"
+	PullingImage            = "PullingImage"
+	PulledImage             = "PulledImage"
+	FailedToPullImage       = "FailedToPullImage"
+	FailedToInspectImage    = "InspectImageFailed"
 	ErrImageNeverPullPolicy = "ErrImageNeverPull"
-	BackOffPullImage        = "BackOff"
+	BackOffPullImage        = "BackOffPullImage"
 
 	// kubelet event reason list
 	NodeReady                            = "NodeReady"
@@ -84,7 +84,7 @@ const (
 	FreeDiskSpaceFailed = "FreeDiskSpaceFailed"
 
 	// Probe event reason list
-	ContainerUnhealthy = "Unhealthy"
+	ContainerUnhealthy = "ContainerUnhealthy"
 
 	// Pod worker event reason list
 	FailedSync = "FailedSync"

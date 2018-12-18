@@ -32,6 +32,7 @@ import (
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/util/config"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 // PodConfigNotificationMode describes how changes are sent to the update channel.
@@ -346,7 +347,9 @@ func filterInvalidPods(pods []*v1.Pod, source string, recorder record.EventRecor
 		name := kubecontainer.GetPodFullName(pod)
 		if names.Has(name) {
 			glog.Warningf("Pod[%d] (%s) from %s failed validation due to duplicate pod name %q, ignoring", i+1, format.Pod(pod), source, pod.Name)
-			recorder.Eventf(pod, v1.EventTypeWarning, events.FailedValidation, "Error validating pod %s from %s due to duplicate pod name %q, ignoring", format.Pod(pod), source, pod.Name)
+			msg := fmt.Sprintf("Error validating pod %s from %s due to duplicate pod name %q, ignoring", format.Pod(pod), source, pod.Name)
+			podchange.RecordPodLevelEvent(recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedValidation,  msg)
+			//recorder.Eventf(pod, v1.EventTypeWarning, events.FailedValidation, "Error validating pod %s from %s due to duplicate pod name %q, ignoring", format.Pod(pod), source, pod.Name)
 			continue
 		} else {
 			names.Insert(name)

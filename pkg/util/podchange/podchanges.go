@@ -19,6 +19,13 @@ type RcChangeEvent struct {
 	ReadyReplicas int32  `json:"readyReplicas"`
 }
 
+type PodStatusChangeEvent struct {
+	EventType     string 		`json:"eventType,omitempty"`
+	PodName       string 		`json:"podName,omitempty"`
+	Action        string 		`json:"action,omitempty"`
+	Pod           v1.Pod 		`json:"pod,omitempty"`
+}
+
 // Depracated
 type StatefulsetChangeEvent struct {
 	EventType     string `json:"eventType,omitempty"`
@@ -162,25 +169,6 @@ func RecordStatefulSetStatusEvent(recorder record.EventRecorder, ssName, namespa
 	message, _ := json.Marshal(changeEvent)
 
 	recorder.Eventf(ref, v1.EventTypeNormal, "StatefulSetStatusUpdate", "%s", string(message))
-}
-
-// Depracated: use RecordPodEvent instead.
-func RecordStatefulSetPodEvent(recorder record.EventRecorder, po *v1.Pod, ssName, namespace, event, action string) {
-	ref := &v1.ObjectReference{
-		Kind:      "StatefulSet",
-		Name:      ssName,
-		Namespace: namespace,
-	}
-	changeEvent := StatefulsetChangeEvent{
-		SsName:    ssName,
-		Namespace: namespace,
-		PodName:   po.Name,
-		EventType: event,
-		Action:    action,
-	}
-	message, _ := json.Marshal(changeEvent)
-
-	recorder.Eventf(ref, v1.EventTypeNormal, "StatefulSetUpdate", "%s", string(message))
 }
 
 func RecordJobPodEvent(recorder record.EventRecorder, jobName, namespace, podName, event, action string) {

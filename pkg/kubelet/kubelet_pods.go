@@ -66,6 +66,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
 	volumevalidation "k8s.io/kubernetes/pkg/volume/validation"
 	"k8s.io/kubernetes/third_party/forked/golang/expansion"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const (
@@ -630,7 +631,9 @@ func (kl *Kubelet) makeEnvironmentVariables(pod *v1.Pod, container *v1.Container
 			}
 			if len(invalidKeys) > 0 {
 				sort.Strings(invalidKeys)
-				kl.recorder.Eventf(pod, v1.EventTypeWarning, "InvalidEnvironmentVariableNames", "Keys [%s] from the EnvFrom configMap %s/%s were skipped since they are considered invalid environment variable names.", strings.Join(invalidKeys, ", "), pod.Namespace, name)
+				msg := fmt.Sprintf("Keys [%s] from the EnvFrom configMap %s/%s were skipped since they are considered invalid environment variable names.", strings.Join(invalidKeys, ", "), pod.Namespace, name)
+				podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady","InvalidEnvironmentVariableNames", msg)
+				//kl.recorder.Eventf(pod, v1.EventTypeWarning, "InvalidEnvironmentVariableNames", "Keys [%s] from the EnvFrom configMap %s/%s were skipped since they are considered invalid environment variable names.", strings.Join(invalidKeys, ", "), pod.Namespace, name)
 			}
 		case envFrom.SecretRef != nil:
 			s := envFrom.SecretRef
@@ -665,7 +668,9 @@ func (kl *Kubelet) makeEnvironmentVariables(pod *v1.Pod, container *v1.Container
 			}
 			if len(invalidKeys) > 0 {
 				sort.Strings(invalidKeys)
-				kl.recorder.Eventf(pod, v1.EventTypeWarning, "InvalidEnvironmentVariableNames", "Keys [%s] from the EnvFrom secret %s/%s were skipped since they are considered invalid environment variable names.", strings.Join(invalidKeys, ", "), pod.Namespace, name)
+				msg := fmt.Sprintf("Keys [%s] from the EnvFrom secret %s/%s were skipped since they are considered invalid environment variable names.", strings.Join(invalidKeys, ", "), pod.Namespace, name)
+				podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeWarning, "Pending","NotReady", "InvalidEnvironmentVariableNames", msg)
+				//kl.recorder.Eventf(pod, v1.EventTypeWarning, "InvalidEnvironmentVariableNames", "Keys [%s] from the EnvFrom secret %s/%s were skipped since they are considered invalid environment variable names.", strings.Join(invalidKeys, ", "), pod.Namespace, name)
 			}
 		}
 	}
@@ -835,10 +840,18 @@ func (kl *Kubelet) killPod(pod *v1.Pod, runningPod *kubecontainer.Pod, status *k
 		return fmt.Errorf("one of the two arguments must be non-nil: runningPod, status")
 	}
 
+	if pod == nil {
+		return nil
+	}
+
+	oldPod := *pod
 	// Call the container runtime KillPod method which stops all running containers of the pod
 	if err := kl.containerRuntime.KillPod(pod, p, gracePeriodOverride); err != nil {
 		return err
+	} else {
+		podchange.RecordPodLevelEvent(kl.recorder, &oldPod, v1.EventTypeNormal, "Delete", "NotReady", "PodDelete", "Pod Delete Successfully")
 	}
+
 	if err := kl.containerManager.UpdateQOSCgroups(); err != nil {
 		glog.V(2).Infof("Failed to update QoS cgroups while killing pod: %v", err)
 	}

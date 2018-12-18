@@ -26,6 +26,7 @@ import (
 	cadvisorapi "github.com/google/cadvisor/info/v1"
 
 	"k8s.io/api/core/v1"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubetypes "k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -46,6 +47,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const (
@@ -556,6 +558,12 @@ func (m *kubeGenericRuntimeManager) computePodActions(pod *v1.Pod, podStatus *ku
 	return changes
 }
 
+// IsPodReady returns true if a pod is ready; false otherwise.
+func IsPodReady(status v1.PodStatus) bool {
+	return podutil.IsPodReadyConditionTrue(status)
+}
+
+
 // SyncPod syncs the running pod into the desired pod by executing following steps:
 //
 //  1. Compute sandbox and container changes.
@@ -569,12 +577,15 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 	podContainerChanges := m.computePodActions(pod, podStatus)
 	glog.V(3).Infof("computePodActions got %+v for pod %q", podContainerChanges, format.Pod(pod))
 	if podContainerChanges.CreateSandbox {
-		ref, err := ref.GetReference(legacyscheme.Scheme, pod)
+		_, err := ref.GetReference(legacyscheme.Scheme, pod)
+		//ref, err := ref.GetReference(legacyscheme.Scheme, pod)
 		if err != nil {
 			glog.Errorf("Couldn't make a ref to pod %q: '%v'", format.Pod(pod), err)
 		}
 		if podContainerChanges.SandboxID != "" {
-			m.recorder.Eventf(ref, v1.EventTypeNormal, events.SandboxChanged, "Pod sandbox changed, it will be killed and re-created.")
+			msg := "Pod sandbox changed, it will be killed and re-created."
+			podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeNormal, "Pending", "NotReady", events.SandboxChanged, msg)
+			//m.recorder.Eventf(ref, v1.EventTypeNormal, events.SandboxChanged, "Pod sandbox changed, it will be killed and re-created.")
 		} else {
 			glog.V(4).Infof("SyncPod received new pod %q, will create a sandbox for it", format.Pod(pod))
 		}
@@ -644,22 +655,28 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		if err != nil {
 			createSandboxResult.Fail(kubecontainer.ErrCreatePodSandbox, msg)
 			glog.Errorf("createPodSandbox for pod %q failed: %v", format.Pod(pod), err)
-			ref, referr := ref.GetReference(legacyscheme.Scheme, pod)
+			_, referr := ref.GetReference(legacyscheme.Scheme, pod)
+			//ref, referr := ref.GetReference(legacyscheme.Scheme, pod)
 			if referr != nil {
 				glog.Errorf("Couldn't make a ref to pod %q: '%v'", format.Pod(pod), referr)
 			}
-			m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedCreatePodSandBox, "Failed create pod sandbox: %v", err)
+			msg := fmt.Sprintf("Failed create pod sandbox: %v", err)
+			podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedCreatePodSandBox, msg)
+			//m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedCreatePodSandBox, "Failed create pod sandbox: %v", err)
 			return
 		}
 		glog.V(4).Infof("Created PodSandbox %q for pod %q", podSandboxID, format.Pod(pod))
 
 		podSandboxStatus, err := m.runtimeService.PodSandboxStatus(podSandboxID)
 		if err != nil {
-			ref, referr := ref.GetReference(legacyscheme.Scheme, pod)
+			_, referr := ref.GetReference(legacyscheme.Scheme, pod)
+			//ref, referr := ref.GetReference(legacyscheme.Scheme, pod)
 			if referr != nil {
 				glog.Errorf("Couldn't make a ref to pod %q: '%v'", format.Pod(pod), referr)
 			}
-			m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedStatusPodSandBox, "Unable to get pod sandbox status: %v", err)
+			msg := fmt.Sprintf("Unable to get pod sandbox status: %v", err)
+			podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.FailedStatusPodSandBox, msg)
+			//m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedStatusPodSandBox, "Unable to get pod sandbox status: %v", err)
 			glog.Errorf("Failed to get pod sandbox status: %v; Skipping pod %q", err, format.Pod(pod))
 			result.Fail(err)
 			return
@@ -760,9 +777,14 @@ func (m *kubeGenericRuntimeManager) doBackOff(pod *v1.Pod, container *v1.Contain
 	// backOff requires a unique key to identify the container.
 	key := getStableKey(pod, container)
 	if backOff.IsInBackOffSince(key, ts) {
-		if ref, err := kubecontainer.GenerateContainerRef(pod, container); err == nil {
-			m.recorder.Eventf(ref, v1.EventTypeWarning, events.BackOffStartContainer, "Back-off restarting failed container")
+		if _, err := kubecontainer.GenerateContainerRef(pod, container); err == nil {
+			errMsg := fmt.Sprintf("Back-off restarting failed container %v", container.Name)
+			podchange.RecordPodLevelEvent(m.recorder, pod, v1.EventTypeWarning, "Pending", "NotReady", events.BackOffStartContainer, errMsg)
+			//podchange.RecordContainerLevelEvent(m.recorder, pod.Name, container.Name, v1.EventTypeWarning, events.BackOffStartContainer, errMsg)
 		}
+		//if ref, err := kubecontainer.GenerateContainerRef(pod, container); err == nil {
+		//	m.recorder.Eventf(ref, v1.EventTypeWarning, events.BackOffStartContainer, "Back-off restarting failed container")
+		//}
 		err := fmt.Errorf("Back-off %s restarting failed container=%s pod=%s", backOff.Get(key), container.Name, format.Pod(pod))
 		glog.Infof("%s", err.Error())
 		return true, err.Error(), kubecontainer.ErrCrashLoopBackOff

@@ -255,6 +255,11 @@ func autoConvert_v1beta1_KubeletConfiguration_To_kubeletconfig_KubeletConfigurat
 	out.EnforceNodeAllocatable = *(*[]string)(unsafe.Pointer(&in.EnforceNodeAllocatable))
 	out.RemoteVolumeServerAddr = in.RemoteVolumeServerAddr
 	out.GPUScale = in.GPUScale
+	out.MqUrl = in.MqUrl
+	out.MQUsername = in.MQUsername
+	out.MQPasswd = in.MQPasswd
+	out.MqType = in.MqType
+	out.VHost = in.VHost
 	return nil
 }
 
@@ -378,6 +383,11 @@ func autoConvert_kubeletconfig_KubeletConfiguration_To_v1beta1_KubeletConfigurat
 	out.EnforceNodeAllocatable = *(*[]string)(unsafe.Pointer(&in.EnforceNodeAllocatable))
 	out.RemoteVolumeServerAddr = in.RemoteVolumeServerAddr
 	out.GPUScale = in.GPUScale
+	out.MqUrl = in.MqUrl
+	out.MQUsername = in.MQUsername
+	out.MQPasswd = in.MQPasswd
+	out.MqType = in.MqType
+	out.VHost = in.VHost
 	return nil
 }
 

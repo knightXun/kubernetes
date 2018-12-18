@@ -436,6 +436,12 @@ type KubeletConfiguration struct {
 	RemoteVolumeServerAddr string  `json:"remoteVolumeServerAddr,omitempty"`
 
 	GPUScale int32 `json:"GPUScale,omitempty"`
+
+	MqUrl 		string			`json:"MqUrl,omitempty"`
+	MQUsername 	string			`json:"MQUsername,omitempty"`
+	MQPasswd   	string			`json:"MQPasswd,omitempty"`
+	MqType      string			`json:"MqType,omitempty"`
+	VHost      string			`json:"VHost,omitempty"`
 }
 
 type KubeletAuthorizationMode string

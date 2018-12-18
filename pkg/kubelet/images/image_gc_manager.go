@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/events"
 	"k8s.io/kubernetes/pkg/kubelet/util/sliceutils"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 // StatsProvider is an interface for fetching stats used during image garbage
@@ -289,7 +290,8 @@ func (im *realImageGCManager) GarbageCollect() error {
 	// Check valid capacity.
 	if capacity == 0 {
 		err := goerrors.New("invalid capacity 0 on image filesystem")
-		im.recorder.Eventf(im.nodeRef, v1.EventTypeWarning, events.InvalidDiskCapacity, err.Error())
+		podchange.RecordNodeLevelEvent(im.recorder, string(im.nodeRef.Name), v1.EventTypeWarning, "InvalidDiskCapacity", events.InvalidDiskCapacity, err.Error())
+		//im.recorder.Eventf(im.nodeRef, v1.EventTypeWarning, events.InvalidDiskCapacity, err.Error())
 		return err
 	}
 
@@ -305,7 +307,8 @@ func (im *realImageGCManager) GarbageCollect() error {
 
 		if freed < amountToFree {
 			err := fmt.Errorf("failed to garbage collect required amount of images. Wanted to free %d bytes, but freed %d bytes", amountToFree, freed)
-			im.recorder.Eventf(im.nodeRef, v1.EventTypeWarning, events.FreeDiskSpaceFailed, err.Error())
+			podchange.RecordNodeLevelEvent(im.recorder, im.nodeRef.Name, v1.EventTypeWarning, events.FreeDiskSpaceFailed, events.FreeDiskSpaceFailed, err.Error())
+			//im.recorder.Eventf(im.nodeRef, v1.EventTypeWarning, events.FreeDiskSpaceFailed, err.Error())
 			return err
 		}
 	}

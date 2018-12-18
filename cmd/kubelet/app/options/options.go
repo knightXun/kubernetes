@@ -214,6 +214,8 @@ type KubeletFlags struct {
 	HostIPCSources []string
 
 	GPUScale int32
+
+
 }
 
 // NewKubeletFlags will create a new KubeletFlags with default values
@@ -576,4 +578,9 @@ func AddKubeletConfigFlags(mainfs *pflag.FlagSet, c *kubeletconfig.KubeletConfig
 
 	fs.Int32Var(&c.GPUScale, "gpu-scale", c.GPUScale, "virtualize one gpu to many gpus")
 
+	fs.StringVar(&c.MqUrl, "MqUrl", c.MqUrl, "rabbit mq url")
+	fs.StringVar(&c.MQUsername, "MQUsername", c.MQUsername, "rabbit mq MQUsername")
+	fs.StringVar(&c.MQPasswd, "MQPasswd", c.MQPasswd, "rabbit mq MQPasswd")
+	fs.StringVar(&c.MqType, "MqType", c.MqType, "rabbit mq MqType")
+	fs.StringVar(&c.VHost, "VHost", c.VHost, "rabbit mq VHost")
 }

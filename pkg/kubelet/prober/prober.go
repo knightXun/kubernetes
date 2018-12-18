@@ -40,6 +40,7 @@ import (
 	"k8s.io/utils/exec"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/util/podchange"
 )
 
 const maxProbeRetries = 3
@@ -98,19 +99,26 @@ func (pb *prober) probe(probeType probeType, pod *v1.Pod, status v1.PodStatus, c
 	result, output, err := pb.runProbeWithRetries(probeType, probeSpec, pod, status, container, containerID, maxProbeRetries)
 	if err != nil || result != probe.Success {
 		// Probe failed in one way or another.
-		ref, hasRef := pb.refManager.GetRef(containerID)
+		_, hasRef := pb.refManager.GetRef(containerID)
+		//ref, hasRef := pb.refManager.GetRef(containerID)
 		if !hasRef {
 			glog.Warningf("No ref for container %q (%s)", containerID.String(), ctrName)
 		}
 		if err != nil {
 			glog.V(1).Infof("%s probe for %q errored: %v", probeType, ctrName, err)
 			if hasRef {
-				pb.recorder.Eventf(ref, v1.EventTypeWarning, events.ContainerUnhealthy, "%s probe errored: %v", probeType, err)
+				msg := fmt.Sprintf("Container %v: %s probe errored: %v", container.Name, probeType, err)
+				podchange.RecordPodLevelEvent(pb.recorder, pod, v1.EventTypeWarning, "Running", "NotReady", events.ContainerUnhealthy, msg)
+				//podchange.RecordContainerLevelEvent(pb.recorder, pod.Name, container.Name, v1.EventTypeWarning, events.ContainerUnhealthy, msg)
+				//pb.recorder.Eventf(ref, v1.EventTypeWarning, events.ContainerUnhealthy, "%s probe errored: %v", probeType, err)
 			}
 		} else { // result != probe.Success
 			glog.V(1).Infof("%s probe for %q failed (%v): %s", probeType, ctrName, result, output)
 			if hasRef {
-				pb.recorder.Eventf(ref, v1.EventTypeWarning, events.ContainerUnhealthy, "%s probe failed: %s", probeType, output)
+				msg := fmt.Sprintf("Container %v: %s probe failed: %s", container.Name, probeType, output)
+				podchange.RecordPodLevelEvent(pb.recorder, pod, v1.EventTypeWarning, "Running", "NotReady", events.ContainerUnhealthy, msg)
+				//podchange.RecordContainerLevelEvent(pb.recorder, pod.Name, container.Name, v1.EventTypeWarning, events.ContainerUnhealthy, msg)
+				//pb.recorder.Eventf(ref, v1.EventTypeWarning, events.ContainerUnhealthy, "%s probe failed: %s", probeType, output)
 			}
 		}
 		return results.Failure, err

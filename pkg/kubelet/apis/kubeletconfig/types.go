@@ -271,6 +271,12 @@ type KubeletConfiguration struct {
 	RemoteVolumeServerAddr string
 
 	GPUScale int32
+
+	MqUrl 		string
+	MQUsername 	string
+	MQPasswd   	string
+	MqType      string
+	VHost       string
 }
 
 type KubeletAuthorizationMode string

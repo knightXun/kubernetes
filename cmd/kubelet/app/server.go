@@ -94,6 +94,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/rlimit"
 	"k8s.io/kubernetes/pkg/version"
 	"k8s.io/kubernetes/pkg/version/verflag"
+	"k8s.io/kubernetes/pkg/kubelet/mqevent"
 )
 
 const (
@@ -418,11 +419,22 @@ func initConfigz(kc *kubeletconfiginternal.KubeletConfiguration) error {
 	return nil
 }
 
+
+//make MqType EventRecorder
+func makeMqEventRecorder(MqUrl, MQUsername, MQPasswd, MqType, VHost string, kubeDeps *kubelet.Dependencies, nodeName types.NodeName) {
+	if kubeDeps.Recorder != nil {
+		return
+	}
+
+	kubeDeps.Recorder = mqevent.NewMqEvents(MqUrl, MQUsername, MQPasswd, MqType, VHost)
+}
+
 // makeEventRecorder sets up kubeDeps.Recorder if it's nil. It's a no-op otherwise.
 func makeEventRecorder(kubeDeps *kubelet.Dependencies, nodeName types.NodeName) {
 	if kubeDeps.Recorder != nil {
 		return
 	}
+
 	eventBroadcaster := record.NewBroadcaster()
 	kubeDeps.Recorder = eventBroadcaster.NewRecorder(legacyscheme.Scheme, v1.EventSource{Component: componentKubelet, Host: string(nodeName)})
 	eventBroadcaster.StartLogging(glog.V(3).Infof)
@@ -606,8 +618,12 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies) (err error) {
 		}
 	}
 
-	// Setup event recorder if required.
-	makeEventRecorder(kubeDeps, nodeName)
+	if s.MqUrl != "" {
+		makeMqEventRecorder(s.MqUrl, s.MQUsername, s.MQPasswd, s.MqType, s.VHost, kubeDeps, nodeName)
+	} else {
+		// Setup event recorder if required.
+		makeEventRecorder(kubeDeps, nodeName)
+	}
 
 	if kubeDeps.ContainerManager == nil {
 		if s.CgroupsPerQOS && s.CgroupRoot == "" {
@@ -854,8 +870,13 @@ func RunKubelet(kubeFlags *options.KubeletFlags, kubeCfg *kubeletconfiginternal.
 	if err != nil {
 		return err
 	}
-	// Setup event recorder if required.
-	makeEventRecorder(kubeDeps, nodeName)
+
+	if kubeCfg.MqUrl != "" {
+		makeMqEventRecorder(kubeCfg.MqUrl, kubeCfg.MQUsername, kubeCfg.MQPasswd, kubeCfg.MqType, kubeCfg.VHost, kubeDeps, nodeName)
+	} else {
+		// Setup event recorder if required.
+		makeEventRecorder(kubeDeps, nodeName)
+	}
 
 	// TODO(mtaufen): I moved the validation of these fields here, from UnsecuredKubeletConfig,
 	//                so that I could remove the associated fields from KubeletConfiginternal. I would
