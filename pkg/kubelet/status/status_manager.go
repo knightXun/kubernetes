@@ -315,11 +315,12 @@ func (m *manager) recorderPodEvents(pod *v1.Pod, new v1.PodStatus) {
 func (m *manager) updateStatusInternal(pod *v1.Pod, status v1.PodStatus, forceUpdate bool) bool {
 	var oldStatus v1.PodStatus
 	cachedStatus, isCached := m.podStatuses[pod.UID]
+	oldPodStatus := pod.Status
 	if isCached {
 		oldStatus = cachedStatus.status
-		if IsPodReady(oldStatus) != IsPodReady(status) {
-			m.recorderPodEvents(pod, status)
-		}
+		//if IsPodReady(oldStatus) != IsPodReady(status) {
+		//	m.recorderPodEvents(pod, status)
+		//}
 	} else if mirrorPod, ok := m.podManager.GetMirrorPodByPod(pod); ok {
 		//m.recorderPodEvents(pod, status)
 		oldStatus = mirrorPod.Status
@@ -357,11 +358,21 @@ func (m *manager) updateStatusInternal(pod *v1.Pod, status v1.PodStatus, forceUp
 	}
 
 	normalizeStatus(pod, &status)
+
 	// The intent here is to prevent concurrent updates to a pod's status from
 	// clobbering each other so the phase of a pod progresses monotonically.
 	if isCached && isStatusEqual(&cachedStatus.status, &status) && !forceUpdate {
 		glog.V(3).Infof("Ignoring same status for pod %q, status: %+v", format.Pod(pod), status)
 		return false // No new status.
+	}
+
+	if isCached {
+		oldStatus = cachedStatus.status
+		if IsPodReady(oldPodStatus) != IsPodReady(status) {
+			newPod := *pod
+			newPod.Status = status
+			m.recorderPodEvents(&newPod, status)
+		}
 	}
 
 	newStatus := versionedPodStatus{

@@ -288,8 +288,8 @@ func (mqManager *MqManager) SendMsgAck(body string) error {
 		if err != nil {
 			glog.Errorf("Failed to publish a message: %v", err)
 		}
-
 		return err
+
 	} else if strings.Contains(body, "kubelet.NodeLevel") {
 		if mqManager.NodeProducer == nil {
 			err := fmt.Errorf("Channel is't existing ")

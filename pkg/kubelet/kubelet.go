@@ -1503,7 +1503,22 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 	// Record pod worker start latency if being created
 	// TODO: make pod workers record their own latencies
 	if updateType == kubetypes.SyncPodCreate {
-		podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeNormal, "Creating", "NotReady","PodCreate", "Pod Create")
+		allContainerPods, err := kl.containerRuntime.GetPods(true)
+
+		if err == nil {
+			found := false
+			for _, containerPod := range allContainerPods {
+				glog.V(1).Infof("MiniCloud: review containerPod: %v match %v", containerPod.Name, pod.Name)
+				if containerPod.Name == pod.Name {
+					found = true
+				}
+			}
+			if !found {
+				podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeNormal, "Creating", "NotReady","PodCreate", "Pod Create")
+			}
+		} else {
+			podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeNormal, "Creating", "NotReady","PodCreate", "Pod Create")
+		}
 		if !firstSeenTime.IsZero() {
 			// This is the first time we are syncing the pod. Record the latency
 			// since kubelet first saw the pod if firstSeenTime is set.
