@@ -132,6 +132,7 @@ func (mq *MqManager) tryToConnect() error {
 		glog.Warningf("failed to create node producer by rabbitMQ(%s): %v", mq.url, err)
 		return err
 	}
+	mq.connected = true
 	return nil
 }
 
