@@ -260,8 +260,10 @@ func (mq *MqManager) createNodeProducer() error {
 // TODO: Here have a problem filling msg.Body.
 func (mqManager *MqManager) SendMsgAck(body string) error {
 	if !mqManager.IsConnected() {
-		err := fmt.Errorf("Not connected to AMQP")
-		glog.Errorf("Failed to send msg to rabbitMQ: %v", err)
+		err := mqManager.tryToConnect()
+		if err != nil {
+			glog.Errorf("Failed to send msg to rabbitMQ, create mq connection: %v", err)
+		}
 		return err
 	}
 
