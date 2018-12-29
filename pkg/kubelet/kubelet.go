@@ -1489,7 +1489,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 			utilruntime.HandleError(err)
 			return err
 		}
-		podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeNormal, "Delete", "NotReady", "PodDelete", "Pod Delete Successfully")
+		//podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeNormal, "Delete", "NotReady", "PodDelete", "Pod Delete Successfully")
 		return nil
 	}
 
@@ -2112,6 +2112,7 @@ func (kl *Kubelet) HandlePodRemoves(pods []*v1.Pod) {
 		if err := kl.deletePod(pod); err != nil {
 			glog.V(2).Infof("Failed to delete pod %q, err: %v", format.Pod(pod), err)
 		}
+		podchange.RecordPodLevelEvent(kl.recorder, pod, v1.EventTypeNormal, "Delete", "NotReady", "PodDelete", "Pod Delete Successfully")
 		kl.probeManager.RemovePod(pod)
 	}
 }
