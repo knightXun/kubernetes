@@ -26,6 +26,7 @@ const (
 
 	LabelOS   = "beta.kubernetes.io/os"
 	LabelArch = "beta.kubernetes.io/arch"
+	LabelSSNCode= "kubernetes.io/ssncode"
 )
 
 // When the --failure-domains scheduler flag is not specified,

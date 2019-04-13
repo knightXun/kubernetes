@@ -199,6 +199,8 @@ type MachineInfo struct {
 
 	// ID of cloud instance (e.g. instance-1) given to it by the cloud provider.
 	InstanceID InstanceID `json:"instance_id"`
+
+	SsnCode    string     `json:"ssn_code"`
 }
 
 type VersionInfo struct {

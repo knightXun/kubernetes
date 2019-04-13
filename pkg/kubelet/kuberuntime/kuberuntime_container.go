@@ -231,7 +231,7 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(container *v1.Contai
 	}
 
 	// set environment variables
-	envs := make([]*runtimeapi.KeyValue, len(opts.Envs))
+	envs := make([]*runtimeapi.KeyValue, len(opts.Envs) + 1 )
 	for idx := range opts.Envs {
 		e := opts.Envs[idx]
 		envs[idx] = &runtimeapi.KeyValue{
@@ -239,6 +239,13 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(container *v1.Contai
 			Value: e.Value,
 		}
 	}
+
+	env := &runtimeapi.KeyValue{
+		Key: "kubernetes_io_ssncode",
+		Value: m.machineInfo.SsnCode,
+	}
+
+	envs[len(opts.Envs)] = env
 	config.Envs = envs
 
 	return config, cleanupAction, nil

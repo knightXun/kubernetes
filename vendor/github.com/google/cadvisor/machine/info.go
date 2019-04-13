@@ -140,6 +140,8 @@ func Info(sysFs sysfs.SysFs, fsInfo fs.FsInfo, inHostNamespace bool) (*info.Mach
 		glog.Errorf("Failed to get system UUID: %v", err)
 	}
 
+	ssnCode := sysinfo.GetSSNCode()
+
 	realCloudInfo := cloudinfo.NewRealCloudInfo()
 	cloudProvider := realCloudInfo.GetCloudProvider()
 	instanceType := realCloudInfo.GetInstanceType()
@@ -159,6 +161,7 @@ func Info(sysFs sysfs.SysFs, fsInfo fs.FsInfo, inHostNamespace bool) (*info.Mach
 		CloudProvider:  cloudProvider,
 		InstanceType:   instanceType,
 		InstanceID:     instanceID,
+		SsnCode: 		ssnCode,
 	}
 
 	for i := range filesystems {

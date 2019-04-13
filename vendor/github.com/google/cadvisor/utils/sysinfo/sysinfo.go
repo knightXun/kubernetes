@@ -17,6 +17,7 @@ package sysinfo
 import (
 	"fmt"
 	"regexp"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -200,4 +201,16 @@ func getNetworkStats(name string, sysFs sysfs.SysFs) (info.InterfaceStats, error
 
 func GetSystemUUID(sysFs sysfs.SysFs) (string, error) {
 	return sysFs.GetSystemUUID()
+}
+
+func GetSSNCode() string {
+	ssnExec := exec.Command("dmidecode", "-s", "system-serial-number")
+	ssnCodeBytes, err := ssnExec.Output()
+	ssnCode := ""
+	if err == nil {
+		ssnCode = string(ssnCodeBytes)
+		ssnCode = strings.TrimSuffix(ssnCode, "\n")
+	}
+
+	return ssnCode
 }
