@@ -22,7 +22,9 @@ import (
 	"net"
 	goruntime "runtime"
 	"sort"
+	"strings"
 	"time"
+	"os/exec"
 
 	"k8s.io/klog"
 
@@ -152,6 +154,7 @@ func (kl *Kubelet) updateDefaultLabels(initialNode, existingNode *v1.Node) bool 
 		kubeletapis.LabelInstanceType,
 		kubeletapis.LabelOS,
 		kubeletapis.LabelArch,
+		kubeletapis.LabelSSNCode,
 	}
 
 	needsUpdate := false
@@ -233,6 +236,16 @@ func (kl *Kubelet) initialNode() (*v1.Node, error) {
 		}
 		nodeTaints = append(nodeTaints, taints...)
 	}
+
+	ssnExec := exec.Command("dmidecode", "-s", "system-serial-number")
+	ssnCodeBytes, err := ssnExec.Output()
+	ssnCode := ""
+	if err == nil {
+		ssnCode = string(ssnCodeBytes)
+		ssnCode = strings.TrimSuffix(ssnCode, "\n")
+	}
+
+	node.Labels[kubeletapis.LabelSSNCode] = ssnCode
 
 	unschedulableTaint := v1.Taint{
 		Key:    schedulerapi.TaintNodeUnschedulable,

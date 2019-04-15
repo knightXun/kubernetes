@@ -48,6 +48,7 @@ const (
 
 	// LabelNamespaceNodeRestriction is a forbidden label namespace that kubelets may not self-set when the NodeRestriction admission plugin is enabled
 	LabelNamespaceNodeRestriction = "node-restriction.kubernetes.io"
+	LabelSSNCode= "kubernetes.io/ssncode"
 )
 
 // When the --failure-domains scheduler flag is not specified,
