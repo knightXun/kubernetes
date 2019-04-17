@@ -337,6 +337,7 @@ function kube::release::create_docker_images_for_server() {
     local images_dir="${RELEASE_IMAGES}/${arch}"
     mkdir -p "${images_dir}"
 
+    # here we can replace docker registry
     local -r docker_registry="k8s.gcr.io"
     # Docker tags cannot contain '+'
     local docker_tag="${KUBE_GIT_VERSION/+/_}"
@@ -376,10 +377,18 @@ function kube::release::create_docker_images_for_server() {
         ln "${binary_dir}/${binary_name}" "${docker_build_path}/${binary_name}"
         ln "${KUBE_ROOT}/build/nsswitch.conf" "${docker_build_path}/nsswitch.conf"
         chmod 0644 "${docker_build_path}/nsswitch.conf"
-        cat <<EOF > "${docker_file_path}"
+        if [[ "${binary_name}"  != "kube-controller-manager" ]]; then
+            cat <<EOF > "${docker_file_path}"
 FROM ${base_image}
 COPY ${binary_name} /usr/local/bin/${binary_name}
 EOF
+        else
+             cat <<EOF > "${docker_file_path}"
+FROM ubuntu
+RUN apt update && apt install -y ceph-common dmidecode net-tools
+COPY ${binary_name} /usr/local/bin/${binary_name}
+EOF
+        fi
         # ensure /etc/nsswitch.conf exists so go's resolver respects /etc/hosts
         if [[ "${base_image}" =~ busybox ]]; then
           echo "COPY nsswitch.conf /etc/" >> "${docker_file_path}"
