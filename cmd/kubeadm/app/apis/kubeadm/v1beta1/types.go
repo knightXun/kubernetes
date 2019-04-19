@@ -111,6 +111,10 @@ type ClusterConfiguration struct {
 
 	// The cluster name
 	ClusterName string `json:"clusterName,omitempty"`
+
+	LogDir      string  `json:"logDir",omitempty`
+
+	LogLevel    string  `json:"logLevel",omitempty`
 }
 
 // ControlPlaneComponent holds settings common to control plane component of the cluster

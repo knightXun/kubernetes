@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -42,6 +43,8 @@ type kubeletFlagsOpts struct {
 	execer                   utilsexec.Interface
 	pidOfFunc                func(string) ([]int, error)
 	defaultHostname          string
+	logLevel                 string
+	logDir                   string
 }
 
 // WriteKubeletDynamicEnvFile writes an environment file with dynamic flags to the kubelet.
@@ -60,6 +63,8 @@ func WriteKubeletDynamicEnvFile(cfg *kubeadmapi.ClusterConfiguration, nodeReg *k
 		execer:                   utilsexec.New(),
 		pidOfFunc:                procfs.PidOf,
 		defaultHostname:          hostName,
+		logDir:                   cfg.LogDir,
+		logLevel:                 cfg.LogLevel,
 	}
 	stringMap := buildKubeletArgMap(flagOpts)
 	argList := kubeadmutil.BuildArgumentListFromMap(stringMap, nodeReg.KubeletExtraArgs)
@@ -90,6 +95,11 @@ func buildKubeletArgMap(opts kubeletFlagsOpts) map[string]string {
 		kubeletFlags["container-runtime-endpoint"] = opts.nodeRegOpts.CRISocket
 	}
 
+	if opts.logLevel != "" {
+		kubeletFlags["v"] = opts.logLevel
+		kubeletFlags["logtostderr"] = "false"
+		kubeletFlags["log-file"] = path.Join(opts.logDir, "kubelet.log")
+	}
 	if opts.registerTaintsUsingFlags && opts.nodeRegOpts.Taints != nil && len(opts.nodeRegOpts.Taints) > 0 {
 		taintStrs := []string{}
 		for _, taint := range opts.nodeRegOpts.Taints {

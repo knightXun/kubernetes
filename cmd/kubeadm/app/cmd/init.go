@@ -58,6 +58,7 @@ var (
 		  mkdir -p $HOME/.kube
 		  sudo cp -i {{.KubeConfigPath}} $HOME/.kube/config
 		  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+		  export KUBECONFIG=$HOME/.kube/admin.conf	
 
 		You should now deploy a pod network to the cluster.
 		Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
@@ -234,6 +235,14 @@ func AddInitConfigFlags(flagSet *flag.FlagSet, cfg *kubeadmapiv1beta1.InitConfig
 	flagSet.StringVar(
 		&cfg.NodeRegistration.Name, options.NodeName, cfg.NodeRegistration.Name,
 		`Specify the node name.`,
+	)
+	flagSet.StringVar(
+		&cfg.LogLevel, options.LogLevel, cfg.ClusterConfiguration.LogLevel,
+		`Specify the kube master LogLevel.`,
+	)
+	flagSet.StringVar(
+		&cfg.LogDir, options.LogDir, cfg.ClusterConfiguration.LogDir,
+		`Specify the kube master LogDir.`,
 	)
 	cmdutil.AddCRISocketFlag(flagSet, &cfg.NodeRegistration.CRISocket)
 	flagSet.StringVar(featureGatesString, options.FeatureGatesString, *featureGatesString, "A set of key=value pairs that describe feature gates for various features. "+

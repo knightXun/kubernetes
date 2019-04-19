@@ -127,4 +127,8 @@ const (
 
 	// SkipCertificateKeyPrint flag instruct kubeadm to skip printing certificate key used to encrypt certs by 'kubeadm init'.
 	SkipCertificateKeyPrint = "skip-certificate-key-print"
+
+	LogLevel = "log-level"
+
+	LogDir   = "log-dir"
 )

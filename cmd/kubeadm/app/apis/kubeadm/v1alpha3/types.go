@@ -120,6 +120,10 @@ type ClusterConfiguration struct {
 
 	// The cluster name
 	ClusterName string `json:"clusterName,omitempty"`
+
+	LogDir      string  `json:"logDir",omitempty`
+
+	LogLevel    string  `json:"logLevel",omitempty`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

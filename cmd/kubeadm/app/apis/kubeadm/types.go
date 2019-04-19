@@ -117,6 +117,12 @@ type ClusterConfiguration struct {
 
 	// The cluster name
 	ClusterName string
+
+	//LogDir for kube master components
+	LogDir      string
+
+	//LogLevel for kube master components
+	LogLevel    string
 }
 
 // ControlPlaneComponent holds settings common to control plane component of the cluster

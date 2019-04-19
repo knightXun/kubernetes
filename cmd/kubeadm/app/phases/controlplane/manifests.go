@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -83,6 +84,28 @@ func GetStaticPodSpecs(cfg *kubeadmapi.ClusterConfiguration, endpoint *kubeadmap
 			Env:             getProxyEnvVars(),
 		}, mounts.GetVolumes(kubeadmconstants.KubeScheduler)),
 	}
+
+	//if cfg.LogDir != "" {
+	//	hostPathDirectoryOrCreate := v1.HostPathDirectoryOrCreate
+	//	staticPodSpecs[kubeadmconstants.KubeAPIServer].Spec.Volumes = append(staticPodSpecs[kubeadmconstants.KubeAPIServer].Spec.Volumes,
+	//			staticpodutil.NewVolume("log", cfg.LogDir, &hostPathDirectoryOrCreate))
+	//	staticPodSpecs[kubeadmconstants.KubeAPIServer].Spec.Containers[0].VolumeMounts = append(
+	//		staticPodSpecs[kubeadmconstants.KubeAPIServer].Spec.Containers[0].VolumeMounts,
+	//		staticpodutil.NewVolumeMount("log", cfg.LogDir, false))
+	//
+	//	staticPodSpecs[kubeadmconstants.KubeControllerManager].Spec.Volumes = append(staticPodSpecs[kubeadmconstants.KubeControllerManager].Spec.Volumes,
+	//		staticpodutil.NewVolume("log", cfg.LogDir, &hostPathDirectoryOrCreate))
+	//	staticPodSpecs[kubeadmconstants.KubeControllerManager].Spec.Containers[0].VolumeMounts = append(
+	//		staticPodSpecs[kubeadmconstants.KubeControllerManager].Spec.Containers[0].VolumeMounts,
+	//		staticpodutil.NewVolumeMount("log", cfg.LogDir, false))
+	//
+	//	staticPodSpecs[kubeadmconstants.KubeScheduler].Spec.Volumes = append(staticPodSpecs[kubeadmconstants.KubeScheduler].Spec.Volumes,
+	//		staticpodutil.NewVolume("log", cfg.LogDir, &hostPathDirectoryOrCreate))
+	//	staticPodSpecs[kubeadmconstants.KubeScheduler].Spec.Containers[0].VolumeMounts = append(
+	//		staticPodSpecs[kubeadmconstants.KubeScheduler].Spec.Containers[0].VolumeMounts,
+	//		staticpodutil.NewVolumeMount("log", cfg.LogDir, false))
+	//
+	//}
 	return staticPodSpecs
 }
 
@@ -187,6 +210,16 @@ func getAPIServerCommand(cfg *kubeadmapi.ClusterConfiguration, localAPIEndpoint 
 			if value, ok := cfg.Etcd.Local.ExtraArgs["advertise-client-urls"]; ok {
 				defaultArguments["etcd-servers"] = value
 			}
+		}
+	}
+
+	if cfg.LogDir != "" {
+		defaultArguments["log-file"] = path.Join(cfg.LogDir, "kube-apiserver.log")
+		defaultArguments["logtostderr"] = "false"
+		if cfg.LogLevel == "" {
+			defaultArguments["v"] = "1"
+		} else {
+			defaultArguments["v"] = cfg.LogLevel
 		}
 	}
 
@@ -298,6 +331,16 @@ func getControllerManagerCommand(cfg *kubeadmapi.ClusterConfiguration, k8sVersio
 		defaultArguments["node-cidr-mask-size"] = maskSize
 	}
 
+	if cfg.LogDir != "" {
+		defaultArguments["log-file"] = path.Join(cfg.LogDir, "kube-controller-manager.log")
+		defaultArguments["logtostderr"] = "false"
+		if cfg.LogLevel == "" {
+			defaultArguments["v"] = "1"
+		} else {
+			defaultArguments["v"] = cfg.LogLevel
+		}
+	}
+
 	command := []string{"kube-controller-manager"}
 	command = append(command, kubeadmutil.BuildArgumentListFromMap(defaultArguments, cfg.ControllerManager.ExtraArgs)...)
 
@@ -310,6 +353,15 @@ func getSchedulerCommand(cfg *kubeadmapi.ClusterConfiguration) []string {
 		"bind-address": "127.0.0.1",
 		"leader-elect": "true",
 		"kubeconfig":   filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.SchedulerKubeConfigFileName),
+	}
+	if cfg.LogDir != "" {
+		defaultArguments["log-file"] = path.Join(cfg.LogDir, "kube-scheduler.log")
+		defaultArguments["logtostderr"] = "false"
+		if cfg.LogLevel == "" {
+			defaultArguments["v"] = "1"
+		} else {
+			defaultArguments["v"] = cfg.LogLevel
+		}
 	}
 
 	command := []string{"kube-scheduler"}

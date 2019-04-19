@@ -19,6 +19,7 @@ package proxy
 import (
 	"bytes"
 	"fmt"
+	"path"
 
 	"github.com/pkg/errors"
 	apps "k8s.io/api/apps/v1"
@@ -35,6 +36,7 @@ import (
 	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
 	"k8s.io/kubernetes/cmd/kubeadm/app/util/apiclient"
 	rbachelper "k8s.io/kubernetes/pkg/apis/rbac/v1"
+	staticpodutil "k8s.io/kubernetes/cmd/kubeadm/app/util/staticpod"
 )
 
 const (
@@ -88,7 +90,7 @@ func EnsureProxyAddon(cfg *kubeadmapi.ClusterConfiguration, localEndpoint *kubea
 	if err != nil {
 		return errors.Wrap(err, "error when parsing kube-proxy daemonset template")
 	}
-	if err := createKubeProxyAddon(proxyConfigMapBytes, proxyDaemonSetBytes, client); err != nil {
+	if err := createKubeProxyAddon(proxyConfigMapBytes, proxyDaemonSetBytes, client, cfg); err != nil {
 		return err
 	}
 	if err := CreateRBACRules(client); err != nil {
@@ -115,7 +117,7 @@ func CreateRBACRules(client clientset.Interface) error {
 	return createClusterRoleBindings(client)
 }
 
-func createKubeProxyAddon(configMapBytes, daemonSetbytes []byte, client clientset.Interface) error {
+func createKubeProxyAddon(configMapBytes, daemonSetbytes []byte, client clientset.Interface, cfg *kubeadmapi.ClusterConfiguration) error {
 	kubeproxyConfigMap := &v1.ConfigMap{}
 	if err := kuberuntime.DecodeInto(clientsetscheme.Codecs.UniversalDecoder(), configMapBytes, kubeproxyConfigMap); err != nil {
 		return errors.Wrap(err, "unable to decode kube-proxy configmap")
@@ -130,7 +132,32 @@ func createKubeProxyAddon(configMapBytes, daemonSetbytes []byte, client clientse
 	if err := kuberuntime.DecodeInto(clientsetscheme.Codecs.UniversalDecoder(), daemonSetbytes, kubeproxyDaemonSet); err != nil {
 		return errors.Wrap(err, "unable to decode kube-proxy daemonset")
 	}
+	hostPathFile := v1.HostPathFile
+	kubeproxyDaemonSet.Spec.Template.Spec.Volumes = append(kubeproxyDaemonSet.Spec.Template.Spec.Volumes,
+		staticpodutil.NewVolume( "localtime", "/etc/localtime", &hostPathFile))
 
+	kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].VolumeMounts = append(kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].VolumeMounts,
+		staticpodutil.NewVolumeMount("localtime", "/etc/localtime", true))
+
+	if cfg.LogDir != "" {
+		hostPathDirectoryOrCreate := v1.HostPathDirectoryOrCreate
+
+		kubeproxyDaemonSet.Spec.Template.Spec.Volumes = append(kubeproxyDaemonSet.Spec.Template.Spec.Volumes,
+			staticpodutil.NewVolume( "proxy-log", cfg.LogDir, &hostPathDirectoryOrCreate))
+
+		kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].VolumeMounts = append(kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].VolumeMounts,
+			staticpodutil.NewVolumeMount("proxy-log", cfg.LogDir, false))
+		kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].Args = append(kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].Args,
+			"--log-file=" + path.Join(cfg.LogDir, "kube-proxy.log"), "--logtostderr=false")
+
+		if cfg.LogLevel == "" {
+			kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].Args = append(kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].Args,
+				"--v=1")
+		} else {
+			kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].Args = append(kubeproxyDaemonSet.Spec.Template.Spec.Containers[0].Args,
+				"--v=" + cfg.LogLevel)
+		}
+	}
 	// Create the DaemonSet for kube-proxy or update it in case it already exists
 	return apiclient.CreateOrUpdateDaemonSet(client, kubeproxyDaemonSet)
 }

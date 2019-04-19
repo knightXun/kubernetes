@@ -44,6 +44,7 @@ var caCertsExtraVolumePaths = []string{"/etc/pki", "/usr/share/ca-certificates",
 // getHostPathVolumesForTheControlPlane gets the required hostPath volumes and mounts for the control plane
 func getHostPathVolumesForTheControlPlane(cfg *kubeadmapi.ClusterConfiguration) controlPlaneHostPathMounts {
 	hostPathDirectoryOrCreate := v1.HostPathDirectoryOrCreate
+	hostPathFile := v1.HostPathFile
 	hostPathFileOrCreate := v1.HostPathFileOrCreate
 	mounts := newControlPlaneHostPathMounts()
 
@@ -54,6 +55,10 @@ func getHostPathVolumesForTheControlPlane(cfg *kubeadmapi.ClusterConfiguration) 
 	// Read-only mount for the ca certs (/etc/ssl/certs) directory
 	mounts.NewHostPathMount(kubeadmconstants.KubeAPIServer, caCertsVolumeName, caCertsVolumePath, caCertsVolumePath, true, &hostPathDirectoryOrCreate)
 
+	mounts.NewHostPathMount(kubeadmconstants.KubeAPIServer, "locatime", "/etc/localtime", "/etc/localtime", true, &hostPathFile)
+	if cfg.LogDir != "" {
+		mounts.NewHostPathMount(kubeadmconstants.KubeAPIServer, "apiserver-log", cfg.LogDir, cfg.LogDir, false, &hostPathDirectoryOrCreate)
+	}
 	// If external etcd is specified, mount the directories needed for accessing the CA/serving certs and the private key
 	if cfg.Etcd.External != nil {
 		etcdVols, etcdVolMounts := getEtcdCertVolumes(cfg.Etcd.External, cfg.CertificatesDir)
@@ -69,17 +74,26 @@ func getHostPathVolumesForTheControlPlane(cfg *kubeadmapi.ClusterConfiguration) 
 	// Read-only mount for the controller manager kubeconfig file
 	controllerManagerKubeConfigFile := filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.ControllerManagerKubeConfigFileName)
 	mounts.NewHostPathMount(kubeadmconstants.KubeControllerManager, kubeadmconstants.KubeConfigVolumeName, controllerManagerKubeConfigFile, controllerManagerKubeConfigFile, true, &hostPathFileOrCreate)
+	mounts.NewHostPathMount(kubeadmconstants.KubeControllerManager, "locatime", "/etc/localtime", "/etc/localtime", true, &hostPathFile)
 	// Mount for the flexvolume directory (/usr/libexec/kubernetes/kubelet-plugins/volume/exec) directory
 	// Flexvolume dir must NOT be readonly as it is used for third-party plugins to integrate with their storage backends via unix domain socket.
 	if stat, err := os.Stat(flexvolumeDirVolumePath); err == nil && stat.IsDir() {
 		mounts.NewHostPathMount(kubeadmconstants.KubeControllerManager, flexvolumeDirVolumeName, flexvolumeDirVolumePath, flexvolumeDirVolumePath, false, &hostPathDirectoryOrCreate)
 	}
 
+	if cfg.LogDir != "" {
+		mounts.NewHostPathMount(kubeadmconstants.KubeControllerManager, "controller-log", cfg.LogDir, cfg.LogDir, false, &hostPathDirectoryOrCreate)
+	}
+
 	// HostPath volumes for the scheduler
 	// Read-only mount for the scheduler kubeconfig file
 	schedulerKubeConfigFile := filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.SchedulerKubeConfigFileName)
 	mounts.NewHostPathMount(kubeadmconstants.KubeScheduler, kubeadmconstants.KubeConfigVolumeName, schedulerKubeConfigFile, schedulerKubeConfigFile, true, &hostPathFileOrCreate)
+	mounts.NewHostPathMount(kubeadmconstants.KubeScheduler, "locatime", "/etc/localtime", "/etc/localtime", true, &hostPathFile)
 
+	if cfg.LogDir != "" {
+		mounts.NewHostPathMount(kubeadmconstants.KubeScheduler, "scheduler-log", cfg.LogDir, cfg.LogDir, false, &hostPathDirectoryOrCreate)
+	}
 	// On some systems were we host-mount /etc/ssl/certs, it is also required to mount additional directories.
 	// This is needed due to symlinks pointing from files in /etc/ssl/certs to these directories.
 	for _, caCertsExtraVolumePath := range caCertsExtraVolumePaths {
